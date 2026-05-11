@@ -804,8 +804,8 @@ The Crypto Broker and Platform Mesh share the same foundational design principle
 This plan describes the incremental steps to implement Pattern A (Crypto Broker as a Platform Mesh Managed Service). The primary target of Pattern A is `SignCertificate` with a KMS key-handle — the CA-as-a-service use case where the consumer submits a CSR and receives a signed certificate, and the CA private key never crosses any trust boundary. `HashData` is used as the first stepping stone because it requires no key material and exercises the complete KRM request/result round-trip; it is not the end goal.
 
 The plan has two milestones:
-- **Milestone 1 (~14 days, Phases 0–5):** `HashData` end-to-end — proves the Platform Mesh wiring without any key management dependency.
-- **Milestone 2 (~16 days additional, Phases 6–7):** `SignCertificate` with KMS key-handle — the production-ready CA-as-a-service integration.
+- **Milestone 1 (Phases 0–5):** `HashData` end-to-end — proves the Platform Mesh wiring without any key management dependency.
+- **Milestone 2 (Phases 6–7):** `SignCertificate` with KMS key-handle — the production-ready CA-as-a-service integration.
 
 ---
 
