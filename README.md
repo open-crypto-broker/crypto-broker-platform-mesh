@@ -1,2 +1,2 @@
-# Platform-Mesh
-Backlog for the integration of the crypto broker to the platform mesh
+# crypto-broker-platform-mesh
+Code for the integration of the crypto broker to the platform mesh.
