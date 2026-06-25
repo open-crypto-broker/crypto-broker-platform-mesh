@@ -49,10 +49,10 @@ tasks:
         msg: "Current kubectl context is not 'kind-platform-mesh'. The service cluster must be the kind 'platform-mesh' cluster. Run 'task local-setup' in platform-mesh/helm-charts, then 'kubectl config use-context kind-platform-mesh'."
       - sh: kubectl cluster-info >/dev/null 2>&1
         msg: "Service cluster (kind 'platform-mesh') is not reachable. Run 'task local-setup' in platform-mesh/helm-charts to start it."
-      - sh: KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get workspaces --server="https://localhost:8443/clusters/root" >/dev/null 2>&1
-        msg: "kcp is not reachable at https://localhost:8443. Run 'task local-setup' in platform-mesh/helm-charts to start kcp."
+      - sh: KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get workspaces --server="https://kcp.api.portal.localhost:8443/clusters/root" >/dev/null 2>&1
+        msg: "kcp is not reachable at https://kcp.api.portal.localhost:8443. Run 'task local-setup' in platform-mesh/helm-charts to start kcp."
       - sh: docker image inspect ghcr.io/open-crypto-broker/operator:latest >/dev/null 2>&1
-        msg: "Operator image 'ghcr.io/open-crypto-broker/operator:latest' not found. Run 'task operator:build && task operator:load'."
+        msg: "Operator image 'ghcr.io/open-crypto-broker/operator:latest' not found. Run 'task operator:build-local' to build it and load it into the kind cluster."
     cmds:
       - echo "[+] Preflight checks passed. Ready to run 'task pm:setup'."
 
@@ -78,11 +78,11 @@ tasks:
       - |
         KUBECONFIG={{.KCP_KUBECONFIG}} kubectl create-workspace providers \
           --type=root:providers --ignore-existing \
-          --server="https://localhost:8443/clusters/root"
+          --server="https://kcp.api.portal.localhost:8443/clusters/root"
       - |
         KUBECONFIG={{.KCP_KUBECONFIG}} kubectl create-workspace crypto-broker-provider \
           --type=root:provider --ignore-existing \
-          --server="https://localhost:8443/clusters/root:providers"
+          --server="https://kcp.api.portal.localhost:8443/clusters/root:providers"
 
   pm:create-apiexport:
     desc: "Apply APIExport + RBAC + Marketplace registration in the provider workspace"
@@ -152,6 +152,7 @@ tasks:
 
   pm:remove:
     desc: "Remove all Platform Mesh resources from the service cluster"
+    silent: true
     cmds:
       - helm uninstall api-syncagent -n crypto-broker-provider 2>/dev/null || true
       - kubectl delete -f service-cluster/operator-deployment.yaml 2>/dev/null || true
@@ -204,7 +205,7 @@ tasks:
     internal: true
     silent: true
     vars:
-      KCP_SERVER: '{{.KCP_SERVER | default "https://localhost:8443/clusters/root:providers:crypto-broker-provider"}}'
+      KCP_SERVER: '{{.KCP_SERVER | default "https://kcp.api.portal.localhost:8443/clusters/root:providers:crypto-broker-provider"}}'
     cmds:
       - echo "[*] Applying content configuration to kcp..."
       - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl apply -f kcp/content-configuration.yaml --server={{.KCP_SERVER}}
@@ -215,7 +216,7 @@ tasks:
     internal: true
     silent: true
     vars:
-      KCP_SERVER: '{{.KCP_SERVER | default "https://localhost:8443/clusters/root:providers:crypto-broker-provider"}}'
+      KCP_SERVER: '{{.KCP_SERVER | default "https://kcp.api.portal.localhost:8443/clusters/root:providers:crypto-broker-provider"}}'
     cmds:
       - echo "[*] Verifying content configuration..."
       - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get contentconfiguration crypto-broker-ui --server={{.KCP_SERVER}} -o yaml | grep -A 5 '"name"'
@@ -355,7 +356,7 @@ tasks:
             root|root:*) echo "{{.WORKSPACE}}" ;;
             *)           echo "root:{{.WORKSPACE}}" ;;
           esac
-      WS_SERVER: 'https://localhost:8443/clusters/{{.WORKSPACE_PATH}}'
+      WS_SERVER: 'https://kcp.api.portal.localhost:8443/clusters/{{.WORKSPACE_PATH}}'
       # Resolve the synced service-cluster namespace via the shared resolver
       # script (DRY: same logic the other consumer tasks rely on). CLUSTER is
       # empty when the workspace does not exist, which the precondition below
@@ -438,3 +439,24 @@ tasks:
       - 'echo "[i] It is synced into service-cluster namespace ''{{.CLUSTER}}'' and is"'
       - 'echo "[i] visible in the Platform Mesh WebUI under this account."'
       - 'echo "[i] The target Deployment ''{{.TARGET_DEPLOY}}'' runs in namespace ''{{.CLUSTER}}''."'
+
+  consumer-app:status:
+    desc: "Diagnose a consumer app + its CryptoBroker in a user WORKSPACE: shows the CryptoBroker on both the kcp (portal) and service-cluster side, the target Deployment, pods, whether the crypto-broker sidecar was injected, recent events and app logs. Vars: WORKSPACE (required), NAME, NAMESPACE (default default), TARGET_DEPLOY (default crypto-broker-consumer-app), LOG_LINES (default 10)."
+    silent: true
+    requires:
+      vars:
+        - WORKSPACE
+    vars:
+      NAME: '{{.NAME | default ""}}'
+      NAMESPACE: '{{.NAMESPACE | default "default"}}'
+      TARGET_DEPLOY: '{{.TARGET_DEPLOY | default "crypto-broker-consumer-app"}}'
+      LOG_LINES: '{{.LOG_LINES | default "10"}}'
+    preconditions:
+      - sh: test -f {{.KCP_KUBECONFIG}}
+        msg: "KCP kubeconfig not found at {{.KCP_KUBECONFIG}}. Run 'task local-setup' in platform-mesh/helm-charts first, or set KCP_KUBECONFIG=<path>."
+    cmds:
+      - |
+        KCP_KUBECONFIG={{.KCP_KUBECONFIG}} \
+        NAME='{{.NAME}}' NAMESPACE='{{.NAMESPACE}}' \
+        TARGET_DEPLOY='{{.TARGET_DEPLOY}}' LOG_LINES='{{.LOG_LINES}}' \
+        bash scripts/consumer-status.sh '{{.WORKSPACE}}'

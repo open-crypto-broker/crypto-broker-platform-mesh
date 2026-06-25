@@ -12,7 +12,7 @@
 # Environment:
 #   KCP_KUBECONFIG  Path to the kcp admin kubeconfig (required).
 #   WS_SERVER       kcp server URL for the consumer workspace cluster (required),
-#                   e.g. https://localhost:8443/clusters/root:my-ws
+#                   e.g. https://kcp.api.portal.localhost:8443/clusters/root:my-ws
 #   PROVIDER_PATH   Provider workspace path
 #                   (default: root:providers:crypto-broker-provider).
 set -euo pipefail

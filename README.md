@@ -18,7 +18,7 @@ task local-setup
 ```
 
 This creates the kind cluster `platform-mesh`, starts kcp (at
-`https://localhost:8443`), and writes the admin kubeconfig to
+`https://kcp.api.portal.localhost:8443`), and writes the admin kubeconfig to
 `.secret/kcp/admin.kubeconfig`.
 
 The tasks here need to find the generated kubeconfig from Platform Mesh. If your

@@ -14,7 +14,7 @@
 #
 # Environment variables:
 #   KCP_KUBECONFIG  Path to the kcp admin kubeconfig (required).
-#   KCP_SERVER      kcp base server URL (default: https://localhost:8443).
+#   KCP_SERVER      kcp base server URL (default: https://kcp.api.portal.localhost:8443).
 #   PROVIDER_PATH   Provider workspace path (default: root:providers:crypto-broker-provider).
 #   COUNT           Number of consumer workspaces to create (default: 10).
 #   PREFIX          Workspace name prefix (default: sim-consumer).
@@ -28,7 +28,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 KCP_KUBECONFIG="${KCP_KUBECONFIG:?KCP_KUBECONFIG must be set}"
-KCP_SERVER="${KCP_SERVER:-https://localhost:8443}"
+KCP_SERVER="${KCP_SERVER:-https://kcp.api.portal.localhost:8443}"
 PROVIDER_PATH="${PROVIDER_PATH:-root:providers:crypto-broker-provider}"
 COUNT="${COUNT:-10}"
 PREFIX="${PREFIX:-sim-consumer}"
