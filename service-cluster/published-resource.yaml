@@ -1,0 +1,11 @@
+apiVersion: syncagent.kcp.io/v1alpha1
+kind: PublishedResource
+metadata:
+  name: crypto-broker
+  labels:
+    app.kubernetes.io/managed-by: crypto-broker-syncagent
+spec:
+  resource:
+    kind: CryptoBroker
+    apiGroup: open-crypto-broker.io
+    version: v1alpha1

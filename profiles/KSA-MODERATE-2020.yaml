@@ -1,0 +1,36 @@
+# KSA NCA MODERATE
+# Goal: Provide moderate security requirements equivalent to 128-bit security level.
+# Hash: SHA-384
+# RSA: >= 3072-bit
+# ECDSA: 256-bit - 384-bit (curve P-256, P-384)
+# Validity: Three years
+# Reference: NCS 1:2020 Page 12 and 16
+---
+- Name: KSA-MODERATE-2020
+  Settings:
+    CryptoLibrary: native
+  API:
+    HashData:
+      HashAlg: sha-384
+    SignCertificate:
+      SignAlg: rsa
+      HashAlg: sha-384
+      Validity:
+        ValidNotBeforeOffset: -1h
+        ValidNotAfterOffset: 26280h
+      KeyConstraints:
+        Subject:
+          RSA:
+            MinKeySize: 3072
+            MaxKeySize: 8192
+          ECDSA:
+            MinKeySize: 256
+            MaxKeySize: 384
+        Issuer:
+          RSA:
+            MinKeySize: 3072
+            MaxKeySize: 8192
+      KeyUsage: [digitalSignature, keyEncipherment]
+      ExtendedKeyUsage: [clientAuth]
+      BasicConstraints:
+        CA: false

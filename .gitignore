@@ -1,0 +1,14 @@
+# Operator build artifacts
+operator/operator
+operator/bin/
+
+# Go
+*.test
+*.out
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Personal, machine-specific Task overrides (keep .env.example tracked)
+.env

@@ -1,0 +1,440 @@
+# https://taskfile.dev
+#
+# Taskfile for deploying the Crypto Broker as a Platform Mesh "app".
+#
+# Prerequisite: a locally running Platform Mesh environment (the kind service
+# cluster *and* kcp) brought up by the separate platform-mesh/helm-charts
+# local-setup. See docs/GUIDE.md for the full walkthrough.
+
+version: '3'
+
+# Personal, machine-specific overrides (e.g. KCP_KUBECONFIG or
+# PM_HELM_CHARTS_DIR) can live in an untracked .env file. See .env.example.
+dotenv: ['.env']
+
+vars:
+  # Path to your local platform-mesh/helm-charts checkout (the local-setup that
+  # runs kcp). Override via the PM_HELM_CHARTS_DIR env var / .env file if your
+  # checkout lives elsewhere.
+  PM_HELM_CHARTS_DIR: '{{.PM_HELM_CHARTS_DIR}}'
+  # Path to the kcp admin kubeconfig written by the helm-charts local-setup.
+  # Override directly with the KCP_KUBECONFIG env var / .env file, or indirectly
+  # by setting PM_HELM_CHARTS_DIR.
+  KCP_KUBECONFIG: '{{.KCP_KUBECONFIG}}'
+
+tasks:
+  default:
+    desc: "Display all available tasks with descriptions"
+    cmds:
+      - task -l
+
+  ################# Platform Mesh Tasks ####################
+
+  pm:preflight:
+    desc: "Verify all prerequisites are met for the Platform Mesh setup (cluster, kcp, tooling, images). Set KCP_KUBECONFIG to the path of the kcp admin kubeconfig."
+    preconditions:
+      - sh: command -v kubectl >/dev/null 2>&1
+        msg: "kubectl not found in PATH. Install kubectl (https://kubernetes.io/docs/tasks/tools/)."
+      - sh: command -v helm >/dev/null 2>&1
+        msg: "helm not found in PATH. Install helm (https://helm.sh/docs/intro/install/)."
+      - sh: command -v docker >/dev/null 2>&1
+        msg: "docker not found in PATH. Install Docker/Podman and ensure the daemon is running."
+      - sh: docker info >/dev/null 2>&1
+        msg: "Container runtime not reachable. Start Docker/Podman before running the setup."
+      - sh: kubectl kcp --help >/dev/null 2>&1
+        msg: "kubectl-kcp plugin not installed. Install it (https://docs.kcp.io/kcp/main/setup/kubectl-plugin/) for the create-workspace commands."
+      - sh: test -f {{.KCP_KUBECONFIG}}
+        msg: "KCP kubeconfig not found at {{.KCP_KUBECONFIG}}. Run 'task local-setup' in platform-mesh/helm-charts first, or set KCP_KUBECONFIG=<path>."
+      - sh: kubectl config current-context 2>/dev/null | grep -q kind-platform-mesh
+        msg: "Current kubectl context is not 'kind-platform-mesh'. The service cluster must be the kind 'platform-mesh' cluster. Run 'task local-setup' in platform-mesh/helm-charts, then 'kubectl config use-context kind-platform-mesh'."
+      - sh: kubectl cluster-info >/dev/null 2>&1
+        msg: "Service cluster (kind 'platform-mesh') is not reachable. Run 'task local-setup' in platform-mesh/helm-charts to start it."
+      - sh: KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get workspaces --server="https://localhost:8443/clusters/root" >/dev/null 2>&1
+        msg: "kcp is not reachable at https://localhost:8443. Run 'task local-setup' in platform-mesh/helm-charts to start kcp."
+      - sh: docker image inspect ghcr.io/open-crypto-broker/operator:latest >/dev/null 2>&1
+        msg: "Operator image 'ghcr.io/open-crypto-broker/operator:latest' not found. Run 'task operator:build && task operator:load'."
+    cmds:
+      - echo "[+] Preflight checks passed. Ready to run 'task pm:setup'."
+
+  pm:setup:
+    desc: "Full Platform Mesh provider setup (workspace + APIExport + operator + syncagent). Set KCP_KUBECONFIG to the path of the kcp admin kubeconfig."
+    deps:
+      - task: pm:preflight
+        vars: { KCP_KUBECONFIG: "{{.KCP_KUBECONFIG}}" }
+    cmds:
+      - task: pm:create-workspace
+        vars: { KCP_KUBECONFIG: "{{.KCP_KUBECONFIG}}" }
+      - task: pm:create-apiexport
+        vars: { KCP_KUBECONFIG: "{{.KCP_KUBECONFIG}}" }
+      - task: pm:deploy-operator
+      - task: pm:deploy-syncagent
+        vars: { KCP_KUBECONFIG: "{{.KCP_KUBECONFIG}}" }
+      - task: pm:publish-resource
+
+  pm:create-workspace:
+    desc: "Create the crypto-broker provider workspace in kcp"
+    internal: true
+    cmds:
+      - |
+        KUBECONFIG={{.KCP_KUBECONFIG}} kubectl create-workspace providers \
+          --type=root:providers --ignore-existing \
+          --server="https://localhost:8443/clusters/root"
+      - |
+        KUBECONFIG={{.KCP_KUBECONFIG}} kubectl create-workspace crypto-broker-provider \
+          --type=root:provider --ignore-existing \
+          --server="https://localhost:8443/clusters/root:providers"
+
+  pm:create-apiexport:
+    desc: "Apply APIExport + RBAC + Marketplace registration in the provider workspace"
+    internal: true
+    cmds:
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl kcp workspace use :root:providers:crypto-broker-provider
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl apply -f kcp/apiexport.yaml
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl apply -f kcp/provider-metadata.yaml
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl apply -f kcp/content-configuration.yaml
+
+  pm:deploy-operator:
+    desc: "Deploy crypto-broker-operator + CRD on the service cluster"
+    internal: true
+    cmds:
+      - kubectl apply -f crds/cryptobroker-crd.yaml
+      - kubectl apply -f service-cluster/operator-deployment.yaml
+      - task: profiles:apply
+
+  profiles:apply:
+    desc: "Create or update the profile catalog ConfigMap from local profile files"
+    internal: true
+    cmds:
+      - |
+        kubectl create configmap crypto-broker-profile-catalog \
+          --from-file=profiles/ \
+          -n crypto-broker-provider \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+  pm:deploy-syncagent:
+    desc: "Deploy api-syncagent on the service cluster"
+    internal: true
+    cmds:
+      - |
+        kubectl create secret generic crypto-broker-kubeconfig \
+          -n crypto-broker-provider \
+          --from-file=kubeconfig={{.KCP_KUBECONFIG}} \
+          --dry-run=client -o yaml | kubectl apply -f -
+      - |
+        TRAEFIK_IP=$(kubectl get svc traefik -n default -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "127.0.0.1")
+        helm repo add kcp https://kcp-dev.github.io/helm-charts 2>/dev/null || true
+        helm repo update
+        helm upgrade --install api-syncagent kcp/api-syncagent \
+          -n crypto-broker-provider --create-namespace \
+          -f service-cluster/syncagent-values.yaml \
+          --set "hostAliases.values[0].ip=$TRAEFIK_IP" \
+          --set crds.enabled=true
+      - kubectl apply -f service-cluster/syncagent-rbac.yaml
+
+  pm:publish-resource:
+    desc: "Create PublishedResource (tells syncagent to expose CryptoBroker CRD to kcp)"
+    internal: true
+    cmds:
+      - kubectl apply -f service-cluster/published-resource.yaml
+
+  ################## Maintenance tasks ####################
+
+  pm:status:
+    desc: "Show status of all Platform Mesh components"
+    silent: true
+    cmds:
+      - echo "=== Service Cluster ==="
+      - kubectl get pods -n crypto-broker-provider
+      - kubectl get cryptobrokers --all-namespaces 2>/dev/null || echo "No CryptoBroker resources found"
+      - echo ""
+      - echo "=== kcp ==="
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl kcp workspace use :root:providers:crypto-broker-provider 2>/dev/null && KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get apiexports || echo "Provider workspace not found"
+
+  pm:remove:
+    desc: "Remove all Platform Mesh resources from the service cluster"
+    cmds:
+      - helm uninstall api-syncagent -n crypto-broker-provider 2>/dev/null || true
+      - kubectl delete -f service-cluster/operator-deployment.yaml 2>/dev/null || true
+      - kubectl delete -f service-cluster/published-resource.yaml 2>/dev/null || true
+      - kubectl delete -f service-cluster/syncagent-rbac.yaml 2>/dev/null || true
+      - kubectl delete configmap crypto-broker-profile-catalog -n crypto-broker-provider 2>/dev/null || true
+      - kubectl delete secret crypto-broker-kubeconfig -n crypto-broker-provider 2>/dev/null || true
+      - kubectl delete -f crds/cryptobroker-crd.yaml 2>/dev/null || true
+      - kubectl delete namespace crypto-broker-provider 2>/dev/null || true
+
+  ################## Consumer Workspace Tasks ####################
+
+  consumer:simulate:
+    desc: "Simulate many tenants: create COUNT consumer workspaces, each binding the API + a CryptoBroker. Vars: COUNT (default 10), PREFIX, PROFILE, ENVIRONMENT, TARGET_DEPLOY, WITH_APP (default false)."
+    vars:
+      COUNT: '{{.COUNT | default "10"}}'
+      PREFIX: '{{.PREFIX | default "sim-consumer"}}'
+      PROFILE: '{{.PROFILE | default "FIPS-140-3-128bit"}}'
+      ENVIRONMENT: '{{.ENVIRONMENT | default "prod"}}'
+      TARGET_DEPLOY: '{{.TARGET_DEPLOY | default "crypto-broker-consumer-app"}}'
+      WITH_APP: '{{.WITH_APP | default "false"}}'
+    preconditions:
+      - sh: test -f {{.KCP_KUBECONFIG}}
+        msg: "KCP kubeconfig not found at {{.KCP_KUBECONFIG}}. Run 'task local-setup' in platform-mesh/helm-charts first, or set KCP_KUBECONFIG=<path>."
+    cmds:
+      - |
+        KCP_KUBECONFIG={{.KCP_KUBECONFIG}} \
+        COUNT={{.COUNT}} PREFIX={{.PREFIX}} PROFILE={{.PROFILE}} \
+        ENVIRONMENT={{.ENVIRONMENT}} TARGET_DEPLOY={{.TARGET_DEPLOY}} WITH_APP={{.WITH_APP}} \
+        bash scripts/simulate-consumers.sh
+
+  consumer:simulate:remove:
+    desc: "Delete consumer workspaces created by consumer:simulate. Vars: COUNT (default 10), PREFIX (default sim-consumer)."
+    vars:
+      COUNT: '{{.COUNT | default "10"}}'
+      PREFIX: '{{.PREFIX | default "sim-consumer"}}'
+    preconditions:
+      - sh: test -f {{.KCP_KUBECONFIG}}
+        msg: "KCP kubeconfig not found at {{.KCP_KUBECONFIG}}. Run 'task local-setup' in platform-mesh/helm-charts first, or set KCP_KUBECONFIG=<path>."
+    cmds:
+      - |
+        KCP_KUBECONFIG={{.KCP_KUBECONFIG}} \
+        COUNT={{.COUNT}} PREFIX={{.PREFIX}} \
+        bash scripts/simulate-consumers-teardown.sh
+
+  ################# Configuration Management ####################
+
+  config:apply-kcp:
+    desc: "Apply content configuration to kcp cluster"
+    internal: true
+    silent: true
+    vars:
+      KCP_SERVER: '{{.KCP_SERVER | default "https://localhost:8443/clusters/root:providers:crypto-broker-provider"}}'
+    cmds:
+      - echo "[*] Applying content configuration to kcp..."
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl apply -f kcp/content-configuration.yaml --server={{.KCP_SERVER}}
+      - echo "[+] Configuration applied successfully"
+
+  config:verify:
+    desc: "Verify content configuration is applied in kcp"
+    internal: true
+    silent: true
+    vars:
+      KCP_SERVER: '{{.KCP_SERVER | default "https://localhost:8443/clusters/root:providers:crypto-broker-provider"}}'
+    cmds:
+      - echo "[*] Verifying content configuration..."
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get contentconfiguration crypto-broker-ui --server={{.KCP_SERVER}} -o yaml | grep -A 5 '"name"'
+      - echo "[+] Configuration verified"
+
+  ################# Platform Mesh Operator Deployment ####################
+
+  operator:build:
+    desc: "Build the Crypto Broker operator Docker image"
+    internal: true
+    dir: operator
+    silent: true
+    cmds:
+      - echo "[*] Building operator image..."
+      - docker build -t ghcr.io/open-crypto-broker/operator:latest .
+      - echo "[+] Operator image built successfully"
+
+  operator:load:
+    desc: "Load the operator image into the kind cluster"
+    internal: true
+    silent: true
+    cmds:
+      - echo "[*] Loading operator image to kind..."
+      - kind load docker-image ghcr.io/open-crypto-broker/operator:latest --name platform-mesh
+      - echo "[+] Image loaded successfully"
+
+  operator:restart:
+    desc: "Restart the operator deployment"
+    internal: true
+    silent: true
+    cmds:
+      - echo "[*] Restarting operator deployment..."
+      - kubectl -n crypto-broker-provider rollout restart deployment/crypto-broker-operator
+      - kubectl -n crypto-broker-provider rollout status deployment/crypto-broker-operator --timeout=60s
+      - echo "[+] Operator restarted successfully"
+
+  operator:deploy:
+    desc: "Build, load, and restart the operator (complete operator update workflow)"
+    internal: true
+    silent: true
+    cmds:
+      - task: operator:build
+      - task: operator:load
+      - task: operator:restart
+      - echo "[+] Operator deployment complete"
+
+  operator:build-local:
+    desc: "Build the operator image locally and load it into the kind cluster (for contributors / local testing). If the operator is already running, it is restarted to pick up the new image."
+    silent: true
+    cmds:
+      - task: operator:build
+      - task: operator:load
+      - |
+        # Only restart when the operator is already deployed; before 'pm:setup'
+        # the deployment does not exist yet and the loaded image is picked up on
+        # first deploy.
+        if kubectl -n crypto-broker-provider get deployment/crypto-broker-operator >/dev/null 2>&1; then
+          echo "[*] Operator already running; restarting to pick up the new image..."
+          kubectl -n crypto-broker-provider rollout restart deployment/crypto-broker-operator
+          kubectl -n crypto-broker-provider rollout status deployment/crypto-broker-operator --timeout=60s
+        else
+          echo "[i] Operator not deployed yet; the new image will be used by 'task pm:setup'."
+        fi
+      - echo "[+] Operator image built and loaded."
+
+  ################# Complete Deployment Workflows ####################
+
+  redeploy-local:
+    desc: "Re-apply local changes to an already-running environment: rebuild the operator from source, reload it into kind, and re-apply the profile catalog + kcp content configuration. Use after editing operator code or kcp config (requires 'pm:setup' to have run first)."
+    silent: true
+    cmds:
+      - echo "[*] Re-deploying local changes (operator + profiles + content config)..."
+      - task: operator:deploy
+      - task: profiles:apply
+      - task: config:apply-kcp
+      - task: pm:status
+      - echo "[+] Redeploy complete!"
+
+  ################# Platform Mesh Consumer App Generation ####################
+
+  consumer-app:build-cli:
+    desc: "Build the Go CLI Docker image locally (alternative to pulling from GHCR)"
+    internal: true
+    dir: "{{.ROOT_DIR}}/../crypto-broker-cli-go"
+    silent: true
+    cmds:
+      - echo "[*] Building Go CLI image..."
+      - docker build -t ghcr.io/open-crypto-broker/test_app_go-binary-x86_64:latest -f docker/Dockerfile .
+      - echo "[+] CLI image built successfully"
+
+  consumer-app:build-server:
+    desc: "Build the Crypto Broker Server Docker image locally (alternative to pulling from GHCR)"
+    internal: true
+    dir: "{{.ROOT_DIR}}/../crypto-broker-server"
+    silent: true
+    cmds:
+      - echo "[*] Building server image..."
+      - docker build -t ghcr.io/open-crypto-broker/server:latest -f docker/Dockerfile .
+      - echo "[+] Server image built successfully"
+
+  consumer-app:load-images:
+    desc: "Load CLI and server images into the kind cluster (for local development only)"
+    internal: true
+    silent: true
+    cmds:
+      - echo "[*] Loading images to kind..."
+      - kind load docker-image ghcr.io/open-crypto-broker/test_app_go-binary-x86_64:latest --name platform-mesh
+      - kind load docker-image ghcr.io/open-crypto-broker/server:latest --name platform-mesh
+      - echo "[+] Images loaded successfully"
+
+  consumer-app:build-and-load:
+    desc: "Build CLI + server images and load them into kind (for local development only)"
+    cmds:
+      - task: consumer-app:build-cli
+      - task: consumer-app:build-server
+      - task: consumer-app:load-images
+
+  ################# Platform Mesh Consumer Workspace Setup ####################
+
+  consumer-app:deploy:
+    desc: "WebUI-visible deployment: create a CryptoBroker in a consumer kcp WORKSPACE (so it shows in the Platform Mesh portal). By default also deploys the consumer app into the workspace's synced namespace; set DEPLOY_APP=false to target an already-existing Deployment instead. The workspace MUST already exist. Vars: WORKSPACE (required), NAME, PROFILE, TARGET_DEPLOY, ENVIRONMENT, DEPLOY_APP (default true)."
+    silent: true
+    requires:
+      vars:
+        - WORKSPACE
+    vars:
+      NAME: '{{.NAME | default "consumer-app-with-broker"}}'
+      PROFILE: '{{.PROFILE | default "FIPS-140-3-128bit"}}'
+      TARGET_DEPLOY: '{{.TARGET_DEPLOY | default "crypto-broker-consumer-app"}}'
+      ENVIRONMENT: '{{.ENVIRONMENT | default "dev"}}'
+      DEPLOY_APP: '{{.DEPLOY_APP | default "true"}}'
+      PROVIDER_PATH: '{{.PROVIDER_PATH | default "root:providers:crypto-broker-provider"}}'
+      # Normalize the workspace to a full root-prefixed path for the kcp server URL.
+      WORKSPACE_PATH:
+        sh: |
+          case "{{.WORKSPACE}}" in
+            root|root:*) echo "{{.WORKSPACE}}" ;;
+            *)           echo "root:{{.WORKSPACE}}" ;;
+          esac
+      WS_SERVER: 'https://localhost:8443/clusters/{{.WORKSPACE_PATH}}'
+      # Resolve the synced service-cluster namespace via the shared resolver
+      # script (DRY: same logic the other consumer tasks rely on). CLUSTER is
+      # empty when the workspace does not exist, which the precondition below
+      # turns into an error (we never create the workspace here).
+      CLUSTER:
+        sh: KCP_KUBECONFIG={{.KCP_KUBECONFIG}} bash scripts/resolve-consumer-namespace.sh '{{.WORKSPACE}}'
+    preconditions:
+      - sh: test -f {{.KCP_KUBECONFIG}}
+        msg: "KCP kubeconfig not found at {{.KCP_KUBECONFIG}}. Run 'task local-setup' in platform-mesh/helm-charts first, or set KCP_KUBECONFIG=<path>."
+      - sh: test -n "{{.CLUSTER}}"
+        msg: |
+          Workspace '{{.WORKSPACE}}' not found (looked up '{{.WORKSPACE_PATH}}').
+          Create it first via the Platform Mesh WebUI (organization/workspace onboarding)
+          or with 'kubectl create-workspace', then re-run this task.
+    cmds:
+      - 'echo "[*] Workspace ''{{.WORKSPACE}}'' resolves to service-cluster namespace: {{.CLUSTER}}"'
+      - task: consumer-app:setup
+        vars:
+          NAMESPACE: '{{.CLUSTER}}'
+          APP_PROFILE: '{{.PROFILE}}'
+          DEPLOY_APP: '{{.DEPLOY_APP}}'
+          TARGET_DEPLOY: '{{.TARGET_DEPLOY}}'
+      - task: consumer-app:bind-api
+        vars:
+          WS_SERVER: '{{.WS_SERVER}}'
+          PROVIDER_PATH: '{{.PROVIDER_PATH}}'
+      - task: consumer-app:create-broker
+        vars:
+          WS_SERVER: '{{.WS_SERVER}}'
+          WORKSPACE: '{{.WORKSPACE}}'
+          CLUSTER: '{{.CLUSTER}}'
+          NAME: '{{.NAME}}'
+          PROFILE: '{{.PROFILE}}'
+          TARGET_DEPLOY: '{{.TARGET_DEPLOY}}'
+          ENVIRONMENT: '{{.ENVIRONMENT}}'
+
+  consumer-app:setup:
+    desc: "Internal: setup the consumer app (Go CLI in loop mode) into NAMESPACE, creating the namespace if needed. Deploys the app BEFORE the broker (the operator does not watch Deployments). Skipped when DEPLOY_APP=false (targeting an already-existing Deployment). Vars: NAMESPACE, APP_PROFILE, DEPLOY_APP (default true), TARGET_DEPLOY."
+    internal: true
+    silent: true
+    vars:
+      NAMESPACE: '{{.NAMESPACE | default "default"}}'
+      APP_PROFILE: '{{.APP_PROFILE | default ""}}'
+      DEPLOY_APP: '{{.DEPLOY_APP | default "true"}}'
+      TARGET_DEPLOY: '{{.TARGET_DEPLOY | default "crypto-broker-consumer-app"}}'
+    cmds:
+      - |
+        # Skip when targeting a Deployment that already exists in the namespace.
+        if [ "{{.DEPLOY_APP}}" != "true" ]; then
+          echo "[*] DEPLOY_APP=false: skipping app deploy; targeting existing Deployment '{{.TARGET_DEPLOY}}'."
+          exit 0
+        fi
+        # Deploy the consumer app into the synced namespace BEFORE the broker (the
+        # operator does not watch Deployments, so the robust order is
+        # namespace -> app -> broker).
+        echo "[*] Deploying consumer app into namespace {{.NAMESPACE}}..."
+        kubectl create namespace "{{.NAMESPACE}}" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -n "{{.NAMESPACE}}" -f consumer-app/deployment.yaml
+        if [ -n "{{.APP_PROFILE}}" ]; then
+          echo "[*] Aligning app profile to '{{.APP_PROFILE}}' (must match the CryptoBroker's profile)..."
+          kubectl set env deploy/crypto-broker-consumer-app -n "{{.NAMESPACE}}" CRYPTO_BROKER_PROFILE={{.APP_PROFILE}}
+        fi
+        echo "[+] Consumer app deployed into namespace {{.NAMESPACE}}."
+
+  consumer-app:bind-api:
+    desc: "Internal: ensure the crypto-broker APIBinding exists in the workspace (idempotent)."
+    internal: true
+    silent: true
+    cmds:
+      - KCP_KUBECONFIG={{.KCP_KUBECONFIG}} WS_SERVER='{{.WS_SERVER}}' PROVIDER_PATH='{{.PROVIDER_PATH}}' bash scripts/bind-crypto-broker-api.sh
+
+  consumer-app:create-broker:
+    desc: "Internal: create the CryptoBroker in the workspace (retries until the APIBinding is ready)."
+    internal: true
+    silent: true
+    cmds:
+      - echo "[*] Creating CryptoBroker '{{.NAME}}' in workspace namespace 'default'..."
+      - KCP_KUBECONFIG={{.KCP_KUBECONFIG}} WS_SERVER='{{.WS_SERVER}}' NAME='{{.NAME}}' PROFILE='{{.PROFILE}}' TARGET_DEPLOY='{{.TARGET_DEPLOY}}' ENVIRONMENT='{{.ENVIRONMENT}}' bash scripts/create-crypto-broker.sh
+      - 'echo "[+] CryptoBroker ''{{.NAME}}'' created in workspace ''{{.WORKSPACE}}''."'
+      - 'echo "[i] It is synced into service-cluster namespace ''{{.CLUSTER}}'' and is"'
+      - 'echo "[i] visible in the Platform Mesh WebUI under this account."'
+      - 'echo "[i] The target Deployment ''{{.TARGET_DEPLOY}}'' runs in namespace ''{{.CLUSTER}}''."'

@@ -1,0 +1,13 @@
+# Helm values for api-syncagent chart (kcp/api-syncagent)
+# Adjust hostAliases.values[0].ip at install time via --set
+apiExportEndpointSliceName: open-crypto-broker.io
+agentName: crypto-broker-syncagent
+kcpKubeconfig: crypto-broker-kubeconfig
+publishedResourceSelector: "app.kubernetes.io/managed-by=crypto-broker-syncagent"
+hostAliases:
+  enabled: true
+  values:
+    - ip: "REPLACE_WITH_TRAEFIK_CLUSTER_IP"
+      hostnames:
+        - localhost
+        - root.kcp.localhost

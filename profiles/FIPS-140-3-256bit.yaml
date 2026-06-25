@@ -1,0 +1,35 @@
+# FIPS-140-3 256bit
+# Goal: Provide 256-bit security.
+# Hash: sha-512
+# RSA: 15380-bit
+# ECDSA: >= 512-bit
+# Reference: NIST SP 800-57, Table 2 on Page 54-55, Table 3 on Page 56
+---
+- Name: FIPS-140-3-256bit
+  Settings:
+    CryptoLibrary: native
+  API:
+    HashData:
+      HashAlg: sha-512
+    SignCertificate:
+      SignAlg: ecdsa
+      HashAlg: sha-512
+      Validity:
+        ValidNotBeforeOffset: -1h
+        ValidNotAfterOffset: 4380h
+      KeyConstraints:
+        Subject:
+          RSA:
+            MinKeySize: 15380
+            MaxKeySize: 15380
+          ECDSA:
+            MinKeySize: 521
+            MaxKeySize: 521
+        Issuer:
+          ECDSA:
+            MinKeySize: 521
+            MaxKeySize: 521
+      KeyUsage: [digitalSignature]
+      ExtendedKeyUsage: [clientAuth]
+      BasicConstraints:
+        CA: false

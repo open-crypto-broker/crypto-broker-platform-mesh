@@ -1,0 +1,33 @@
+# KSA NCA ADVANCED
+# Goal: Provide advanced security requirements equivalent to 256-bit security level.
+# Hash: SHA3-512
+# RSA: Not accepted for ADVANCED level.
+# ECDSA: 512-bit (curve P-521)
+# Validity: Five years
+# Reference: NCS 1:2020 Page 12 and 16
+---
+- Name: KSA-ADVANCED-2020
+  Settings:
+    CryptoLibrary: native
+  API:
+    HashData:
+      HashAlg: sha3-512
+    SignCertificate:
+      SignAlg: ecdsa
+      HashAlg: sha-512
+      Validity:
+        ValidNotBeforeOffset: -1h
+        ValidNotAfterOffset: 43800h
+      KeyConstraints:
+        Subject:
+          ECDSA:
+            MinKeySize: 521
+            MaxKeySize: 521
+        Issuer:
+          ECDSA:
+            MinKeySize: 521
+            MaxKeySize: 521
+      KeyUsage: [digitalSignature, keyEncipherment]
+      ExtendedKeyUsage: [clientAuth]
+      BasicConstraints:
+        CA: false

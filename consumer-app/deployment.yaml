@@ -1,0 +1,66 @@
+# Consumer app: crypto-broker-cli-go running in loop mode.
+# Continuously hashes and signs data to exercise the crypto-broker sidecar.
+#
+# Images:
+#   CLI:    ghcr.io/open-crypto-broker/test_app_go:v0.2.3
+#   Server: ghcr.io/open-crypto-broker/server:v0.2.2 (injected by operator)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-broker-consumer-app
+  labels:
+    app: crypto-broker-consumer-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crypto-broker-consumer-app
+  template:
+    metadata:
+      labels:
+        app: crypto-broker-consumer-app
+    spec:
+      containers:
+        - name: cli-hash
+          image: ghcr.io/open-crypto-broker/test_app_go:v0.2.3
+          env:
+            # The crypto profile is a *platform/deployment* decision (chosen by
+            # the broker owner on the CryptoBroker CR), not an app-developer
+            # decision. The app references it via this env var instead of
+            # hardcoding it, so it can be aligned with whatever profile the
+            # operator provisioned the sidecar with. Kubernetes expands
+            # $(CRYPTO_BROKER_PROFILE) in the command below. Set it via
+            # 'task consumer-app:deploy PROFILE=<name>', which aligns both the
+            # app and the broker.
+            - name: CRYPTO_BROKER_PROFILE
+              value: FIPS-140-3-128bit
+          command:
+            - ./go-client-cli
+            - --loop
+            - "500"
+            - hash
+            - --profile=$(CRYPTO_BROKER_PROFILE)
+            - "Welcome CryptoBroker from Platform Mesh"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+        # - name: cli-sign
+        #   image: ghcr.io/open-crypto-broker/test_app_go:v0.2.3
+        #   command:
+        #     - ./go-client-cli
+        #     - --loop
+        #     - "700"
+        #     - sign
+        #     - --profile=Default
+        #     - "Platform Mesh signing test"
+          # resources:
+          #   requests:
+          #     cpu: 50m
+          #     memory: 64Mi
+          #   limits:
+          #     cpu: 200m
+          #     memory: 128Mi
