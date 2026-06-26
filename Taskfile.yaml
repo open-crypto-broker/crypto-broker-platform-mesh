@@ -21,6 +21,11 @@ vars:
   # Override directly with the KCP_KUBECONFIG env var / .env file, or indirectly
   # by setting PM_HELM_CHARTS_DIR.
   KCP_KUBECONFIG: '{{.KCP_KUBECONFIG}}'
+  # Base URL of the kcp front-proxy (the external URL from the admin kubeconfig).
+  # Every kcp `--server=` target and consumer-workspace URL is derived from this
+  # single value, so a host/port change in the local-setup only needs updating
+  # here. Override via the KCP_SERVER env var / .env file.
+  KCP_SERVER: '{{.KCP_SERVER | default "https://kcp.api.portal.localhost:8443"}}'
 
 tasks:
   default:
@@ -49,8 +54,8 @@ tasks:
         msg: "Current kubectl context is not 'kind-platform-mesh'. The service cluster must be the kind 'platform-mesh' cluster. Run 'task local-setup' in platform-mesh/helm-charts, then 'kubectl config use-context kind-platform-mesh'."
       - sh: kubectl cluster-info >/dev/null 2>&1
         msg: "Service cluster (kind 'platform-mesh') is not reachable. Run 'task local-setup' in platform-mesh/helm-charts to start it."
-      - sh: KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get workspaces --server="https://kcp.api.portal.localhost:8443/clusters/root" >/dev/null 2>&1
-        msg: "kcp is not reachable at https://kcp.api.portal.localhost:8443. Run 'task local-setup' in platform-mesh/helm-charts to start kcp."
+      - sh: KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get workspaces --server="{{.KCP_SERVER}}/clusters/root" >/dev/null 2>&1
+        msg: "kcp is not reachable at {{.KCP_SERVER}}. Run 'task local-setup' in platform-mesh/helm-charts to start kcp."
       - sh: docker image inspect ghcr.io/open-crypto-broker/operator:latest >/dev/null 2>&1
         msg: "Operator image 'ghcr.io/open-crypto-broker/operator:latest' not found. Run 'task operator:build-local' to build it and load it into the kind cluster."
     cmds:
@@ -78,11 +83,11 @@ tasks:
       - |
         KUBECONFIG={{.KCP_KUBECONFIG}} kubectl create-workspace providers \
           --type=root:providers --ignore-existing \
-          --server="https://kcp.api.portal.localhost:8443/clusters/root"
+          --server="{{.KCP_SERVER}}/clusters/root"
       - |
         KUBECONFIG={{.KCP_KUBECONFIG}} kubectl create-workspace crypto-broker-provider \
           --type=root:provider --ignore-existing \
-          --server="https://kcp.api.portal.localhost:8443/clusters/root:providers"
+          --server="{{.KCP_SERVER}}/clusters/root:providers"
 
   pm:create-apiexport:
     desc: "Apply APIExport + RBAC + Marketplace registration in the provider workspace"
@@ -204,22 +209,18 @@ tasks:
     desc: "Apply content configuration to kcp cluster"
     internal: true
     silent: true
-    vars:
-      KCP_SERVER: '{{.KCP_SERVER | default "https://kcp.api.portal.localhost:8443/clusters/root:providers:crypto-broker-provider"}}'
     cmds:
       - echo "[*] Applying content configuration to kcp..."
-      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl apply -f kcp/content-configuration.yaml --server={{.KCP_SERVER}}
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl apply -f kcp/content-configuration.yaml --server="{{.KCP_SERVER}}/clusters/root:providers:crypto-broker-provider"
       - echo "[+] Configuration applied successfully"
 
   config:verify:
     desc: "Verify content configuration is applied in kcp"
     internal: true
     silent: true
-    vars:
-      KCP_SERVER: '{{.KCP_SERVER | default "https://kcp.api.portal.localhost:8443/clusters/root:providers:crypto-broker-provider"}}'
     cmds:
       - echo "[*] Verifying content configuration..."
-      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get contentconfiguration crypto-broker-ui --server={{.KCP_SERVER}} -o yaml | grep -A 5 '"name"'
+      - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl get contentconfiguration crypto-broker-ui --server="{{.KCP_SERVER}}/clusters/root:providers:crypto-broker-provider" -o yaml | grep -A 5 '"name"'
       - echo "[+] Configuration verified"
 
   ################# Platform Mesh Operator Deployment ####################
@@ -336,6 +337,30 @@ tasks:
 
   ################# Platform Mesh Consumer Workspace Setup ####################
 
+  _require-workspace:
+    desc: "Internal precondition guard: verify KCP_KUBECONFIG exists and that WORKSPACE resolves to a synced service-cluster namespace. Shared by the consumer-app deploy/status/remove tasks. Vars: WORKSPACE (required)."
+    internal: true
+    vars:
+      # Normalize the workspace to a full root-prefixed path (used in the error message).
+      WORKSPACE_PATH:
+        sh: |
+          case "{{.WORKSPACE}}" in
+            root|root:*) echo "{{.WORKSPACE}}" ;;
+            *)           echo "root:{{.WORKSPACE}}" ;;
+          esac
+      # Resolve the synced service-cluster namespace; empty when the workspace
+      # does not exist (the resolver always exits 0).
+      CLUSTER:
+        sh: KCP_KUBECONFIG={{.KCP_KUBECONFIG}} KCP_SERVER={{.KCP_SERVER}} bash scripts/resolve-consumer-namespace.sh '{{.WORKSPACE}}'
+    preconditions:
+      - sh: test -f {{.KCP_KUBECONFIG}}
+        msg: "KCP kubeconfig not found at {{.KCP_KUBECONFIG}}. Run 'task local-setup' in platform-mesh/helm-charts first, or set KCP_KUBECONFIG=<path>."
+      - sh: test -n "{{.CLUSTER}}"
+        msg: |
+          Workspace '{{.WORKSPACE}}' not found (looked up '{{.WORKSPACE_PATH}}').
+          Create it first via the Platform Mesh WebUI (organization/workspace onboarding)
+          or with 'kubectl create-workspace', then re-run this task.
+
   consumer-app:deploy:
     desc: "WebUI-visible deployment: create a CryptoBroker in a consumer kcp WORKSPACE (so it shows in the Platform Mesh portal). By default also deploys the consumer app into the workspace's synced namespace; set DEPLOY_APP=false to target an already-existing Deployment instead. The workspace MUST already exist. Vars: WORKSPACE (required), NAME, PROFILE, TARGET_DEPLOY, ENVIRONMENT, DEPLOY_APP (default true)."
     silent: true
@@ -356,21 +381,16 @@ tasks:
             root|root:*) echo "{{.WORKSPACE}}" ;;
             *)           echo "root:{{.WORKSPACE}}" ;;
           esac
-      WS_SERVER: 'https://kcp.api.portal.localhost:8443/clusters/{{.WORKSPACE_PATH}}'
+      WS_SERVER: '{{.KCP_SERVER}}/clusters/{{.WORKSPACE_PATH}}'
       # Resolve the synced service-cluster namespace via the shared resolver
-      # script (DRY: same logic the other consumer tasks rely on). CLUSTER is
-      # empty when the workspace does not exist, which the precondition below
-      # turns into an error (we never create the workspace here).
+      # script (DRY: same logic the other consumer tasks rely on).
       CLUSTER:
-        sh: KCP_KUBECONFIG={{.KCP_KUBECONFIG}} bash scripts/resolve-consumer-namespace.sh '{{.WORKSPACE}}'
-    preconditions:
-      - sh: test -f {{.KCP_KUBECONFIG}}
-        msg: "KCP kubeconfig not found at {{.KCP_KUBECONFIG}}. Run 'task local-setup' in platform-mesh/helm-charts first, or set KCP_KUBECONFIG=<path>."
-      - sh: test -n "{{.CLUSTER}}"
-        msg: |
-          Workspace '{{.WORKSPACE}}' not found (looked up '{{.WORKSPACE_PATH}}').
-          Create it first via the Platform Mesh WebUI (organization/workspace onboarding)
-          or with 'kubectl create-workspace', then re-run this task.
+        sh: KCP_KUBECONFIG={{.KCP_KUBECONFIG}} KCP_SERVER={{.KCP_SERVER}} bash scripts/resolve-consumer-namespace.sh '{{.WORKSPACE}}'
+    deps:
+      # Centralized guard: KCP_KUBECONFIG present + WORKSPACE resolves to a namespace.
+      - task: _require-workspace
+        vars:
+          WORKSPACE: '{{.WORKSPACE}}'
     cmds:
       - 'echo "[*] Workspace ''{{.WORKSPACE}}'' resolves to service-cluster namespace: {{.CLUSTER}}"'
       - task: consumer-app:setup
@@ -451,12 +471,56 @@ tasks:
       NAMESPACE: '{{.NAMESPACE | default "default"}}'
       TARGET_DEPLOY: '{{.TARGET_DEPLOY | default "crypto-broker-consumer-app"}}'
       LOG_LINES: '{{.LOG_LINES | default "10"}}'
-    preconditions:
-      - sh: test -f {{.KCP_KUBECONFIG}}
-        msg: "KCP kubeconfig not found at {{.KCP_KUBECONFIG}}. Run 'task local-setup' in platform-mesh/helm-charts first, or set KCP_KUBECONFIG=<path>."
+    deps:
+      # Centralized guard: KCP_KUBECONFIG present + WORKSPACE resolves to a namespace.
+      - task: _require-workspace
+        vars:
+          WORKSPACE: '{{.WORKSPACE}}'
     cmds:
       - |
-        KCP_KUBECONFIG={{.KCP_KUBECONFIG}} \
+        KCP_KUBECONFIG={{.KCP_KUBECONFIG}} KCP_SERVER={{.KCP_SERVER}} \
         NAME='{{.NAME}}' NAMESPACE='{{.NAMESPACE}}' \
         TARGET_DEPLOY='{{.TARGET_DEPLOY}}' LOG_LINES='{{.LOG_LINES}}' \
         bash scripts/consumer-status.sh '{{.WORKSPACE}}'
+
+  consumer-app:remove:
+    desc: "Reverse of consumer-app:deploy: delete the CryptoBroker from a consumer WORKSPACE (so the operator strips the injected sidecar) and, unless DELETE_APP=false, delete the consumer app Deployment from the workspace's synced namespace. Leaves the workspace and APIBinding intact. Vars: WORKSPACE (required), NAME, NAMESPACE (default: default), TARGET_DEPLOY, DELETE_APP (default true)."
+    silent: true
+    requires:
+      vars:
+        - WORKSPACE
+    vars:
+      NAME: '{{.NAME | default "consumer-app-with-broker"}}'
+      NAMESPACE: '{{.NAMESPACE | default "default"}}'
+      TARGET_DEPLOY: '{{.TARGET_DEPLOY | default "crypto-broker-consumer-app"}}'
+      DELETE_APP: '{{.DELETE_APP | default "true"}}'
+      # Normalize the workspace to a full root-prefixed path for the kcp server URL.
+      WORKSPACE_PATH:
+        sh: |
+          case "{{.WORKSPACE}}" in
+            root|root:*) echo "{{.WORKSPACE}}" ;;
+            *)           echo "root:{{.WORKSPACE}}" ;;
+          esac
+      WS_SERVER: '{{.KCP_SERVER}}/clusters/{{.WORKSPACE_PATH}}'
+      # Resolve the synced service-cluster namespace via the shared resolver
+      # script (DRY: same logic the other consumer tasks rely on).
+      CLUSTER:
+        sh: KCP_KUBECONFIG={{.KCP_KUBECONFIG}} KCP_SERVER={{.KCP_SERVER}} bash scripts/resolve-consumer-namespace.sh '{{.WORKSPACE}}'
+    deps:
+      # Centralized guard: KCP_KUBECONFIG present + WORKSPACE resolves to a namespace.
+      - task: _require-workspace
+        vars:
+          WORKSPACE: '{{.WORKSPACE}}'
+    cmds:
+      - 'echo "[*] Workspace ''{{.WORKSPACE}}'' resolves to service-cluster namespace: {{.CLUSTER}}"'
+      # Delete the CryptoBroker first so the operator de-injects the sidecar
+      # before the Deployment goes away.
+      - KCP_KUBECONFIG={{.KCP_KUBECONFIG}} WS_SERVER='{{.WS_SERVER}}' NAME='{{.NAME}}' NAMESPACE='{{.NAMESPACE}}' bash scripts/remove-crypto-broker.sh
+      - |
+        if [ "{{.DELETE_APP}}" != "true" ]; then
+          echo "[*] DELETE_APP=false: leaving Deployment '{{.TARGET_DEPLOY}}' in namespace {{.CLUSTER}} in place."
+          exit 0
+        fi
+        echo "[*] Deleting consumer app Deployment '{{.TARGET_DEPLOY}}' from namespace {{.CLUSTER}}..."
+        kubectl delete deployment "{{.TARGET_DEPLOY}}" -n "{{.CLUSTER}}" --ignore-not-found
+        echo "[+] Consumer app removed from workspace '{{.WORKSPACE}}'."
