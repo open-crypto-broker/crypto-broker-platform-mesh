@@ -1,0 +1,12 @@
+# CryptoBroker instance for the consumer app.
+# The operator will inject the crypto-broker-server sidecar into the
+# crypto-broker-consumer-app Deployment and mount the shared socket volume.
+apiVersion: open-crypto-broker.io/v1alpha1
+kind: CryptoBroker
+metadata:
+  name: consumer-app-with-broker
+  namespace: default
+spec:
+  profile: FIPS-140-3-128bit
+  targetDeployment: crypto-broker-consumer-app
+  environment: dev

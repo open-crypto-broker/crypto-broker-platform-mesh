@@ -1,0 +1,78 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: cryptobrokers.open-crypto-broker.io
+spec:
+  group: open-crypto-broker.io
+  names:
+    kind: CryptoBroker
+    plural: cryptobrokers
+    singular: cryptobroker
+    shortNames: [cb]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [profile]
+              properties:
+                profile:
+                  type: string
+                  description: "Crypto profile from the catalog (compliance standard)"
+                  enum:
+                    - Default
+                    - FIPS-140-3-128bit
+                    - FIPS-140-3-192bit
+                    - FIPS-140-3-256bit
+                    - KSA-MODERATE-2020
+                    - KSA-ADVANCED-2020
+                targetDeployment:
+                  type: string
+                  description: "Name of the Deployment to inject the crypto-broker sidecar into"
+                environment:
+                  type: string
+                  description: "Server environment (prod disables dev endpoints)"
+                  enum: [prod, dev]
+                  default: prod
+                version:
+                  type: string
+                  description: "Server container image tag"
+                  default: latest
+            status:
+              type: object
+              properties:
+                state:
+                  type: string
+                  enum: [Provisioning, Ready, Error]
+                socketPath:
+                  type: string
+                message:
+                  type: string
+                profileDetails:
+                  type: object
+                  properties:
+                    hashAlgorithm:
+                      type: string
+                    signAlgorithm:
+                      type: string
+      additionalPrinterColumns:
+        - name: Profile
+          type: string
+          jsonPath: .spec.profile
+        - name: Target
+          type: string
+          jsonPath: .spec.targetDeployment
+        - name: State
+          type: string
+          jsonPath: .status.state
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

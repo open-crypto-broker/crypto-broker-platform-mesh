@@ -1,0 +1,176 @@
+apiVersion: ui.platform-mesh.io/v1alpha1
+kind: ContentConfiguration
+metadata:
+  name: crypto-broker-ui
+  labels:
+    ui.platform-mesh.io/entity: core_platform-mesh_io_account
+    ui.platform-mesh.io/content-for: open-crypto-broker.io
+spec:
+  inlineConfiguration:
+    contentType: json
+    content: |-
+      {
+          "name": "crypto-broker",
+          "luigiConfigFragment": {
+              "data": {
+                  "nodes": [
+                      {
+                          "pathSegment": "open_crypto_broker_io_cryptobroker",
+                          "navigationContext": "open_crypto_broker_io_cryptobroker",
+                          "label": "Crypto Broker",
+                          "icon": "locked",
+                          "order": 810,
+                          "entityType": "main.core_platform-mesh_io_account",
+                          "loadingIndicator": {
+                              "enabled": false
+                          },
+                          "keepSelectedForChildren": true,
+                          "url": "/assets/platform-mesh-portal-ui-wc.js#generic-list-view",
+                          "webcomponent": {
+                              "selfRegistered": true
+                          },
+                          "context": {
+                              "resourceDefinition": {
+                                  "apiGroup": "open_crypto_broker_io",
+                                  "entityCollection": "CryptoBrokers",
+                                  "version": "v1alpha1",
+                                  "entity": "CryptoBroker",
+                                  "scope": "Namespaced",
+                                  "namespace": null,
+                                  "readyCondition": {
+                                      "jsonPathExpression": "status.state",
+                                      "property": ["status.state"]
+                                  },
+                                  "ui": {
+                                      "listView": {
+                                          "fields": [
+                                              {
+                                                  "label": "Name",
+                                                  "property": "metadata.name"
+                                              },
+                                              {
+                                                  "label": "Profile",
+                                                  "property": "spec.profile"
+                                              },
+                                              {
+                                                  "label": "Target",
+                                                  "property": "spec.targetDeployment"
+                                              },
+                                              {
+                                                  "label": "State",
+                                                  "property": "status.state"
+                                              }
+                                          ]
+                                      },
+                                      "detailView": {
+                                          "fields": [
+                                              {
+                                                  "label": "Name",
+                                                  "property": "metadata.name"
+                                              },
+                                              {
+                                                  "label": "Profile",
+                                                  "property": "spec.profile"
+                                              },
+                                              {
+                                                  "label": "Target Deployment",
+                                                  "property": "spec.targetDeployment"
+                                              },
+                                              {
+                                                  "label": "Environment",
+                                                  "property": "spec.environment"
+                                              },
+                                              {
+                                                  "label": "State",
+                                                  "property": "status.state"
+                                              },
+                                              {
+                                                  "label": "Socket Path",
+                                                  "property": "status.socketPath"
+                                              },
+                                              {
+                                                  "label": "Message",
+                                                  "property": "status.message"
+                                              }
+                                          ]
+                                      },
+                                      "createView": {
+                                          "fields": [
+                                              {
+                                                  "label": "Name",
+                                                  "property": "metadata.name",
+                                                  "required": true
+                                              },
+                                              {
+                                                  "label": "Profile",
+                                                  "property": "spec.profile",
+                                                  "required": true,
+                                                  "values": [
+                                                      "Default",
+                                                      "FIPS-140-3-128bit",
+                                                      "FIPS-140-3-192bit",
+                                                      "FIPS-140-3-256bit",
+                                                      "KSA-MODERATE-2020",
+                                                      "KSA-ADVANCED-2020"
+                                                  ]
+                                              },
+                                              {
+                                                  "label": "Target Deployment (existing Deployment name)",
+                                                  "property": "spec.targetDeployment",
+                                                  "required": true
+                                              },
+                                              {
+                                                  "label": "Environment",
+                                                  "property": "spec.environment",
+                                                  "values": [
+                                                      "prod",
+                                                      "dev"
+                                                  ]
+                                              }
+                                          ]
+                                      }
+                                  }
+                              }
+                          },
+                          "children": [
+                              {
+                                  "pathSegment": ":cryptobrokerId",
+                                  "hideFromNav": true,
+                                  "keepSelectedForChildren": false,
+                                  "defineEntity": {
+                                      "id": "open_crypto_broker_io_cryptobroker",
+                                      "contextKey": "cryptobrokerId",
+                                      "graphqlEntity": {
+                                          "group": "open_crypto_broker_io",
+                                          "version": "v1alpha1",
+                                          "kind": "CryptoBroker",
+                                          "query": "{ metadata { name } }"
+                                      }
+                                  },
+                                  "context": {
+                                      "accountId": ":accountId",
+                                      "cryptobrokerId": ":cryptobrokerId",
+                                      "resourceId": ":cryptobrokerId"
+                                  }
+                              }
+                          ]
+                      },
+                      {
+                          "entityType": "main.core_platform-mesh_io_account.open_crypto_broker_io_cryptobroker",
+                          "pathSegment": "dashboard",
+                          "label": "Dashboard",
+                          "url": "/assets/platform-mesh-portal-ui-wc.js#generic-detail-view",
+                          "webcomponent": {
+                              "selfRegistered": true
+                          },
+                          "defineEntity": {
+                              "id": "dashboard"
+                          },
+                          "compound": {
+                              "children": []
+                          }
+                      }
+                  ]
+              }
+          }
+      }

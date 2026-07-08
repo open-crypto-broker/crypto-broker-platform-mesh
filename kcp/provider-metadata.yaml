@@ -1,0 +1,17 @@
+apiVersion: ui.platform-mesh.io/v1alpha1
+kind: ProviderMetadata
+metadata:
+  name: open-crypto-broker.io
+spec:
+  displayName: Open Crypto Broker
+  description: |
+    Managed cryptographic service provider for Platform Mesh.
+    Provisions crypto-broker-server sidecars with profile-based policy enforcement.
+    Supports FIPS-140-3 and KSA compliance profiles.
+  contacts:
+    - displayName: Crypto Broker Team
+      email: crypto-broker@open-crypto-broker.io
+      role: ["Maintainer"]
+  preferredSupportChannels:
+    - displayName: GitHub Issues
+      url: https://github.com/open-crypto-broker

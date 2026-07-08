@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: crypto-broker-provider
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crypto-broker-operator
+  namespace: crypto-broker-provider
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crypto-broker-operator
+rules:
+  - apiGroups: ["open-crypto-broker.io"]
+    resources: ["cryptobrokers"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["open-crypto-broker.io"]
+    resources: ["cryptobrokers/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crypto-broker-operator
+subjects:
+  - kind: ServiceAccount
+    name: crypto-broker-operator
+    namespace: crypto-broker-provider
+roleRef:
+  kind: ClusterRole
+  name: crypto-broker-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-broker-operator
+  namespace: crypto-broker-provider
+  labels:
+    app.kubernetes.io/name: crypto-broker-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: crypto-broker-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: crypto-broker-operator
+    spec:
+      serviceAccountName: crypto-broker-operator
+      containers:
+        - name: operator
+          image: ghcr.io/open-crypto-broker/operator:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PROFILES_CATALOG_DIR
+              value: /profiles
+            - name: CRYPTO_BROKER_SERVER_IMAGE
+              value: ghcr.io/open-crypto-broker/server:latest
+          volumeMounts:
+            - name: profiles
+              mountPath: /profiles
+              readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: profiles
+          configMap:
+            # Intentionally reference an externally managed ConfigMap.
+            # Declaring the ConfigMap resource in this manifest can overwrite
+            # real profile files with placeholder data on kubectl apply.
+            name: crypto-broker-profile-catalog

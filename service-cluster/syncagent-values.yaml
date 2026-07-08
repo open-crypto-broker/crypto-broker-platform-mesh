@@ -1,0 +1,21 @@
+# Helm values for api-syncagent chart (kcp/api-syncagent)
+# Adjust hostAliases.values[0].ip at install time via --set
+apiExportEndpointSliceName: open-crypto-broker.io
+agentName: crypto-broker-syncagent
+kcpKubeconfig: crypto-broker-kubeconfig
+publishedResourceSelector: "app.kubernetes.io/managed-by=crypto-broker-syncagent"
+hostAliases:
+  enabled: true
+  values:
+    - ip: "REPLACE_WITH_TRAEFIK_CLUSTER_IP"
+      hostnames:
+        # kcp front-proxy (external URL, from the admin kubeconfig).
+        - kcp.api.portal.localhost
+        - portal.localhost
+        # Per-shard hostnames advertised by APIExportEndpointSlices / shard
+        # baseURLs. The api-syncagent connects to the virtual-workspace endpoint
+        # on the shard that owns the APIExport, so every shard hostname must
+        # resolve to Traefik. Add new shards here if the local-setup adds them.
+        - root.kcp.localhost
+        - triton.kcp.localhost
+        - localhost
