@@ -23,6 +23,17 @@ spec:
       containers:
         - name: cli-hash
           image: ghcr.io/open-crypto-broker/test_app_go:v0.2.3
+          # Run non-root as uid 1000 so the CLI can connect to the crypto-broker
+          # Unix socket owned by the server sidecar (also uid 1000). Enforced
+          # here because the pinned image may still default to root.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           env:
             # The crypto profile is a *platform/deployment* decision (chosen by
             # the broker owner on the CryptoBroker CR), not an app-developer
