@@ -33,7 +33,7 @@ spec:
                               "resourceDefinition": {
                                   "apiGroup": "open_crypto_broker_io",
                                   "entityCollection": "CryptoBrokers",
-                                  "version": "v1alpha1",
+                                  "version": "v1",
                                   "entity": "CryptoBroker",
                                   "scope": "Namespaced",
                                   "namespace": null,
@@ -142,7 +142,7 @@ spec:
                                       "contextKey": "cryptobrokerId",
                                       "graphqlEntity": {
                                           "group": "open_crypto_broker_io",
-                                          "version": "v1alpha1",
+                                          "version": "v1",
                                           "kind": "CryptoBroker",
                                           "query": "{ metadata { name } }"
                                       }

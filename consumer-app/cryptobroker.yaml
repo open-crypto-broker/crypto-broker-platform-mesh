@@ -1,7 +1,7 @@
 # CryptoBroker instance for the consumer app.
 # The operator will inject the crypto-broker-server sidecar into the
 # crypto-broker-consumer-app Deployment and mount the shared socket volume.
-apiVersion: open-crypto-broker.io/v1alpha1
+apiVersion: open-crypto-broker.io/v1
 kind: CryptoBroker
 metadata:
   name: consumer-app-with-broker
