@@ -38,10 +38,6 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
 ## only relevant if the operator ever calls other, external TLS endpoints.
 FROM gcr.io/distroless/static:nonroot
 
-# OCI metadata: lets GHCR link the published image back to its source repository.
-LABEL org.opencontainers.image.source="https://github.com/open-crypto-broker/crypto-broker-platform-mesh" \
-      org.opencontainers.image.description="Crypto Broker operator: injects the crypto-broker-server sidecar into target Deployments."
-
 WORKDIR /
 
 COPY --from=build /app/operator /operator
