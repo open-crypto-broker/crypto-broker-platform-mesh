@@ -35,7 +35,7 @@ RETRY_DELAY="${RETRY_DELAY:-2}"
 
 for _ in $(seq 1 "${RETRIES}"); do
   if cat <<EOF | KUBECONFIG="${KCP_KUBECONFIG}" kubectl apply --server="${WS_SERVER}" -f - >/dev/null 2>&1
-apiVersion: open-crypto-broker.io/v1alpha1
+apiVersion: open-crypto-broker.io/v1
 kind: CryptoBroker
 metadata:
   name: ${NAME}

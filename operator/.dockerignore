@@ -1,0 +1,8 @@
+# Keep the operator build context minimal.
+# The Dockerfile lives in docker/ and is passed via `-f`, so it is not needed
+# inside the build context that gets sent to the daemon.
+docker/
+
+# Docs / VCS artefacts — not needed to compile the operator.
+*.md
+.gitignore
