@@ -1,0 +1,64 @@
+name: Go Continuous Improvement
+
+# CI for the Kubernetes operator, which is a self-contained Go module living in
+# the operator/ subdirectory of this deployment repository.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'operator/**.go'
+      - 'operator/go.mod'
+      - 'operator/go.sum'
+      - '.github/workflows/go.yaml'
+  pull_request:
+    paths:
+      - 'operator/**.go'
+      - 'operator/go.mod'
+      - 'operator/go.sum'
+      - '.github/workflows/go.yaml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  license-check:
+    name: License Compliance
+    permissions:
+      contents: read # for checking out code
+    uses: open-crypto-broker/.github/.github/workflows/license-compliance.yaml@main # nolint # zizmor: ignore[unpinned-uses]
+    with:
+      directory_to_scan: 'operator'
+
+  go-pipeline:
+    name: Go CI Pipeline
+    permissions:
+      contents: read # for checking out code
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: operator
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: 'operator/go.mod'
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || { echo 'gofmt found unformatted files:'; gofmt -l .; exit 1; }
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test -race -covermode=atomic ./...

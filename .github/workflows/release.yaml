@@ -1,0 +1,109 @@
+name: Release
+
+# Releases the Crypto Broker operator container image. The operator is a
+# self-contained Go module in the operator/ subdirectory, so the Docker build is
+# pointed at that context / Dockerfile (see the build-docker job).
+#
+# NOTE: unlike the server / CLI repos there is no "build-binaries" job — the
+# operator is only ever consumed as a container image, not as a distributed CLI
+# binary.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  ################################################
+  # GitHub release with changelog details
+  ################################################
+  github-release:
+    name: Create GitHub Release
+    permissions:
+      contents: write # for creating the GitHub release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          awk -v ver="$VERSION" '
+            /^## \[/ { if (found) exit; if (index($0, "[" ver "]")) found=1; next }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag -F release-notes.md
+
+  ################################################
+  # Metadata (reusable action)
+  ################################################
+  metadata:
+    name: Release Metadata
+    permissions:
+      contents: read # for checking out code
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      commit: ${{ steps.meta.outputs.commit }}
+      is_rc: ${{ steps.meta.outputs.is_rc }}
+      image_name: ${{ steps.meta.outputs.image_name }}
+      image_repo: ${{ steps.meta.outputs.image_repo }}
+      component_repo: ${{ steps.meta.outputs.component_repo }}
+      sbom_file: ${{ steps.meta.outputs.sbom_file }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Extract release metadata
+        id: meta
+        uses: open-crypto-broker/.github/actions/release-metadata@main # nolint # zizmor: ignore[unpinned-uses]
+        with:
+          image-base-name: operator
+
+  ################################################
+  # Build Docker + Security scan (reusable workflow)
+  ################################################
+  build-docker:
+    name: Build Docker and Security Scan
+    needs: metadata
+    permissions:
+      contents: write # for uploading release assets
+      packages: write # for pushing Docker images to GHCR
+      id-token: write # for OIDC-based attestation signing
+      attestations: write # for creating build attestations
+      artifact-metadata: write # for storing artifact metadata
+
+    uses: open-crypto-broker/.github/.github/workflows/release-docker-security.yaml@main # nolint # zizmor: ignore[unpinned-uses]
+    with:
+      tag: ${{ needs.metadata.outputs.tag }}
+      commit: ${{ needs.metadata.outputs.commit }}
+      is_rc: ${{ needs.metadata.outputs.is_rc }}
+      image_name: ${{ needs.metadata.outputs.image_name }}
+      image_repo: ${{ needs.metadata.outputs.image_repo }}
+      sbom_file: ${{ needs.metadata.outputs.sbom_file }}
+      # The operator module + Dockerfile live under operator/. `context` is the
+      # build context (so COPY paths resolve against operator/), while `dockerfile`
+      # is resolved relative to the workspace root.
+      context: operator
+      dockerfile: operator/docker/Dockerfile
