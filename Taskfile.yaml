@@ -232,7 +232,7 @@ tasks:
     silent: true
     cmds:
       - echo "[*] Building operator image..."
-      - docker build -t ghcr.io/open-crypto-broker/operator:latest -f docker/Dockerfile .
+      - docker build --build-context profiles=../profiles -t ghcr.io/open-crypto-broker/operator:latest -f docker/Dockerfile .
       - echo "[+] Operator image built successfully"
 
   operator:load:

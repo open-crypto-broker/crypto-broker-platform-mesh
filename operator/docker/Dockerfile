@@ -42,6 +42,8 @@ WORKDIR /
 
 COPY --from=build /app/operator /operator
 
+COPY --chown=65532:65532 --from=profiles . ./profiles/
+
 USER 65532:65532
 
 ENTRYPOINT ["/operator"]

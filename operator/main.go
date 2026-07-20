@@ -11,9 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 var scheme = runtime.NewScheme()
@@ -43,15 +40,8 @@ func main() {
 		log.Fatalf("unable to start manager: %v", err)
 	}
 
-	createOnlyPredicate := predicate.Funcs{
-		CreateFunc:  func(e event.CreateEvent) bool { return true },
-		UpdateFunc:  func(e event.UpdateEvent) bool { return false },
-		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
-		GenericFunc: func(e event.GenericEvent) bool { return false },
-	}
-
 	err = ctrl.NewControllerManagedBy(mgr).
-		For(&CryptoBroker{}, builder.WithPredicates(createOnlyPredicate)).
+		For(&CryptoBroker{}).
 		Complete(&CryptoBrokerReconciler{
 			Client:      mgr.GetClient(),
 			Scheme:      mgr.GetScheme(),
