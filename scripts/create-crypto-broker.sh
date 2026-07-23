@@ -16,6 +16,8 @@
 #   PROFILE         Crypto profile (default: FIPS-140-3-128bit).
 #   TARGET_DEPLOY   Target Deployment name (default: crypto-broker-consumer-app).
 #   ENVIRONMENT     CryptoBroker environment (default: dev).
+#   WORKSPACE       Workspace path, for display only (optional).
+#   CLUSTER         Service-cluster namespace, for display only (optional).
 #   RETRIES         Number of apply attempts (default: 30).
 #   RETRY_DELAY     Seconds between attempts (default: 2).
 #
@@ -30,9 +32,12 @@ NAMESPACE="${NAMESPACE:-default}"
 PROFILE="${PROFILE:-FIPS-140-3-128bit}"
 TARGET_DEPLOY="${TARGET_DEPLOY:-crypto-broker-consumer-app}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
+WORKSPACE="${WORKSPACE:-}"
+CLUSTER="${CLUSTER:-}"
 RETRIES="${RETRIES:-30}"
 RETRY_DELAY="${RETRY_DELAY:-2}"
 
+echo "[*] Creating CryptoBroker '${NAME}' in workspace namespace '${NAMESPACE}'..."
 for _ in $(seq 1 "${RETRIES}"); do
   if cat <<EOF | KUBECONFIG="${KCP_KUBECONFIG}" kubectl apply --server="${WS_SERVER}" -f - >/dev/null 2>&1
 apiVersion: open-crypto-broker.io/v1
@@ -46,6 +51,12 @@ spec:
   environment: ${ENVIRONMENT}
 EOF
   then
+    echo "[+] CryptoBroker '${NAME}' created${WORKSPACE:+ in workspace '${WORKSPACE}'}."
+    if [ -n "${CLUSTER}" ]; then
+      echo "[i] It is synced into service-cluster namespace '${CLUSTER}' and is"
+      echo "[i] visible in the Platform Mesh WebUI under this account."
+      echo "[i] The target Deployment '${TARGET_DEPLOY}' runs in namespace '${CLUSTER}'."
+    fi
     exit 0
   fi
   sleep "${RETRY_DELAY}"

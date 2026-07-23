@@ -38,7 +38,30 @@ type CryptoBrokerSpec struct {
 
 // +kubebuilder:object:generate=true
 type CryptoBrokerStatus struct {
-	State string `json:"state,omitempty"`
+	State          string          `json:"state,omitempty"`
+	SocketPath     string          `json:"socketPath,omitempty"`
+	Message        string          `json:"message,omitempty"`
+	ProfileDetails *ProfileDetails `json:"profileDetails,omitempty"`
+}
+
+// +kubebuilder:object:generate=true
+type ProfileDetails struct {
+	HashAlgorithm string `json:"hashAlgorithm,omitempty"`
+	SignAlgorithm string `json:"signAlgorithm,omitempty"`
+}
+
+type ProfileEntry struct {
+	Name string `json:"Name"`
+
+	API struct {
+		HashData struct {
+			HashAlg string `json:"HashAlg"`
+		} `json:"HashData"`
+
+		SignCertificate struct {
+			SignAlg string `json:"SignAlg"`
+		} `json:"SignCertificate"`
+	} `json:"API"`
 }
 
 // +kubebuilder:object:root=true

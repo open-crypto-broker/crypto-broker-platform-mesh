@@ -9,136 +9,144 @@ import (
 
 	apps "k8s.io/api/apps/v1"
 	core "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
 
-// Errors
 var (
-	ErrSkipReconcile      = stderrors.New("skip reconcile")
 	ErrNoTargetDeployment = stderrors.New("target deployment was not specified")
+	ErrNoProfileFiles     = stderrors.New("failed to read profile files")
+	ErrTargetNotFound     = stderrors.New("target deployment cannot be found")
+	ErrProfileConfigMap   = stderrors.New("failed to ensure profile config map")
 )
 
-// State
+var logger = ctrl.Log.WithName("crypto-broker-operator")
+
 const (
 	StateProvisioning = "Provisioning"
 	StateReady        = "Ready"
 	StateError        = "Error"
-)
 
-const (
 	sidecarContainerName = "crypto-broker-server"
 
-	socketVolumeName  = "crypto-broker-socket"
+	socketVolumeName  = "crypto-broker-server"
 	profileVolumeName = "crypto-broker-profile"
-	socketMountPath   = "/tmp/open-crypto-broker"
-	profileMountPath  = "/app/profiles"
 
-	labelManagedBy      = "app.kubernetes.io/managed-by"
-	labelManagedByValue = "crypto-broker-operator"
+	socketMountPath  = "/tmp/open-crypto-broker"
+	profileMountPath = "/app/profiles"
 )
 
 type CryptoBrokerReconciler struct {
 	client.Client
-
 	Scheme      *runtime.Scheme
 	ProfilesDir string
 	ServerImage string
 }
 
 func (r *CryptoBrokerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// Load crypto broker.
+	// Load crypto broker
 	broker, err := r.loadCryptoBroker(ctx, req)
 	if err != nil {
-		if stderrors.Is(err, ErrSkipReconcile) {
-			return ctrl.Result{}, nil
-		}
-
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Read the local profile file from disk.
+	// Set initial status
+	err = r.patchStatus(ctx, &broker, StateProvisioning, "Initiating crypto broker injection", nil)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Read profile
 	profileContent, err := r.readProfileFile(broker.Spec.Profile)
 	if err != nil {
-		_ = r.updateStatus(ctx, &broker, StateError)
-		return ctrl.Result{}, fmt.Errorf("failed to read profile file: %w", err)
+		_ = r.patchStatus(ctx, &broker, StateError, err.Error(), nil)
+		return ctrl.Result{}, err
 	}
 
-	// Create or Update the ConfigMap.
-	cmName := fmt.Sprintf("crypto-broker-profile-%s", broker.Name)
-	err = r.reconcileConfigMap(ctx, &broker, cmName, profileContent)
-	if err != nil {
-		_ = r.updateStatus(ctx, &broker, StateError)
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile configmap: %w", err)
-	}
-
-	// Get target deployment.
+	// Get target deployment
 	deployment, err := r.getDeployment(ctx, broker)
 	if err != nil {
-		broker.Status.State = StateError
-		_ = r.Status().Update(ctx, &broker)
+		err = fmt.Errorf("%w: %s", ErrTargetNotFound, broker.Spec.TargetDeployment)
+
+		_ = r.patchStatus(ctx, &broker, StateError, err.Error(), nil)
 		return ctrl.Result{}, err
 	}
 
-	// Verify if the profile volume is already declared in the Pod.
-	hasVolume := false
-	for _, v := range deployment.Spec.Template.Spec.Volumes {
-		if v.Name == profileVolumeName && v.ConfigMap != nil && v.ConfigMap.Name == cmName {
-			hasVolume = true
-			break
-		}
-	}
-
-	// Check if sidecar is already in the Pod and if it has profile volume.
-	if r.hasSidecar(&deployment) && hasVolume {
-		broker.Status.State = StateReady
-		err := r.Status().Update(ctx, &broker)
+	// Ensure we always have config map with our profile
+	configMapName := fmt.Sprintf("crypto-broker-profile-%s", broker.Name)
+	err = r.ensureProfileConfigMap(ctx, configMapName, broker.Namespace, profileContent)
+	if err != nil {
+		_ = r.patchStatus(ctx, &broker, StateError, err.Error(), nil)
 		return ctrl.Result{}, err
 	}
 
-	// If sidecar already exists, remove it from Pod.
-	var containers []core.Container
-	for _, c := range deployment.Spec.Template.Spec.Containers {
-		if c.Name != sidecarContainerName {
-			containers = append(containers, c)
-		}
-	}
-	deployment.Spec.Template.Spec.Containers = containers
-
-	// Inject sidecar.
+	// Inject sidecar
 	r.injectSidecar(&deployment, &broker)
 
-	// Mount volumes.
-	r.mountVolumes(&deployment, cmName)
+	// Ensure we have volumes attached
+	r.ensureVolumes(&deployment, configMapName)
 
-	// Update deployment and mark broker as ready.
+	// Update deployment
 	err = r.Update(ctx, &deployment)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	broker.Status.State = StateReady
-	err = r.Status().Update(ctx, &broker)
+	// Get profile details
+	details, readyMsg, err := getProfileDetails(profileContent, broker.Spec.Profile)
 	if err != nil {
+		_ = r.patchStatus(ctx, &broker, StateError, err.Error(), nil)
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	err = r.patchStatus(ctx, &broker, StateReady, readyMsg, details)
+	return ctrl.Result{}, err
+}
+
+func getProfileDetails(profileContent string, configuredProfile string) (*ProfileDetails, string, error) {
+	var entries []ProfileEntry
+
+	err := yaml.Unmarshal([]byte(profileContent), &entries)
+	if err != nil {
+		return nil, "", err
+	}
+
+	readyMessage := "Crypto broker is running"
+
+	if len(entries) == 0 {
+		return nil, readyMessage, nil
+	}
+
+	entry := entries[0]
+
+	details := &ProfileDetails{
+		HashAlgorithm: entry.API.HashData.HashAlg,
+		SignAlgorithm: entry.API.SignCertificate.SignAlg,
+	}
+
+	if entry.Name != "" && entry.Name != configuredProfile {
+		readyMessage = fmt.Sprintf("Crypto broker is running profile %q", entry.Name)
+	}
+
+	return details, readyMessage, nil
 }
 
 func (r *CryptoBrokerReconciler) getDeployment(ctx context.Context, broker CryptoBroker) (apps.Deployment, error) {
 	var deployment apps.Deployment
 
-	deployKey := types.NamespacedName{
-		Name:      broker.Spec.TargetDeployment,
-		Namespace: broker.Namespace,
-	}
+	err := r.Get(
+		ctx,
+		types.NamespacedName{
+			Name:      broker.Spec.TargetDeployment,
+			Namespace: broker.Namespace,
+		},
+		&deployment,
+	)
 
-	err := r.Get(ctx, deployKey, &deployment)
 	return deployment, err
 }
 
@@ -150,28 +158,17 @@ func (r *CryptoBrokerReconciler) loadCryptoBroker(ctx context.Context, req ctrl.
 		return broker, err
 	}
 
-	if broker.Status.State == StateReady {
-		return broker, ErrSkipReconcile
+	if broker.Spec.TargetDeployment == "" {
+		_ = r.patchStatus(ctx, &broker, StateError, ErrNoTargetDeployment.Error(), nil)
+		return broker, ErrNoTargetDeployment
 	}
 
-	if broker.Spec.TargetDeployment == "" {
-		broker.Status.State = StateError
-		_ = r.Status().Update(ctx, &broker)
-
-		return broker, ErrSkipReconcile
+	if broker.Spec.Profile == "" {
+		_ = r.patchStatus(ctx, &broker, StateError, ErrNoProfileFiles.Error(), nil)
+		return broker, ErrNoProfileFiles
 	}
 
 	return broker, nil
-}
-
-func (r *CryptoBrokerReconciler) hasSidecar(deploy *apps.Deployment) bool {
-	for _, container := range deploy.Spec.Template.Spec.Containers {
-		if container.Name == sidecarContainerName {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (r *CryptoBrokerReconciler) injectSidecar(deploy *apps.Deployment, broker *CryptoBroker) {
@@ -180,29 +177,43 @@ func (r *CryptoBrokerReconciler) injectSidecar(deploy *apps.Deployment, broker *
 	userPtr := int64(1000)
 
 	env := "prod"
+
 	if broker.Spec.Environment != "" {
 		env = broker.Spec.Environment
 	}
 
 	image := r.ServerImage
+
 	if broker.Spec.Version != "" && broker.Spec.Version != "latest" {
 		image = fmt.Sprintf("ghcr.io/open-crypto-broker/server:%s", broker.Spec.Version)
 	}
 
-	// Create sidecar.
 	sidecar := core.Container{
 		Name:            sidecarContainerName,
 		Image:           image,
 		ImagePullPolicy: core.PullIfNotPresent,
 
 		Env: []core.EnvVar{
-			{Name: "CRYPTO_BROKER_PROFILES_DIR", Value: profileMountPath},
-			{Name: "CRYPTO_BROKER_APP_ENV", Value: env},
+			{
+				Name:  "CRYPTO_BROKER_PROFILES_DIR",
+				Value: profileMountPath,
+			},
+			{
+				Name:  "CRYPTO_BROKER_APP_ENV",
+				Value: env,
+			},
 		},
 
 		VolumeMounts: []core.VolumeMount{
-			{Name: socketVolumeName, MountPath: socketMountPath},
-			{Name: profileVolumeName, MountPath: profileMountPath, ReadOnly: true},
+			{
+				Name:      socketVolumeName,
+				MountPath: socketMountPath,
+			},
+			{
+				Name:      profileVolumeName,
+				MountPath: profileMountPath,
+				ReadOnly:  true,
+			},
 		},
 
 		SecurityContext: &core.SecurityContext{
@@ -213,15 +224,20 @@ func (r *CryptoBrokerReconciler) injectSidecar(deploy *apps.Deployment, broker *
 		},
 	}
 
-	// Inject sidecar into Pod.
+	for i := range deploy.Spec.Template.Spec.Containers {
+		if deploy.Spec.Template.Spec.Containers[i].Name == sidecarContainerName {
+			deploy.Spec.Template.Spec.Containers[i] = sidecar
+			return
+		}
+	}
+
 	deploy.Spec.Template.Spec.Containers = append(
 		deploy.Spec.Template.Spec.Containers,
 		sidecar,
 	)
 }
 
-func (r *CryptoBrokerReconciler) mountVolumes(deploy *apps.Deployment, configMapName string) {
-	// Create socket volume
+func (r *CryptoBrokerReconciler) ensureVolumes(deploy *apps.Deployment, configMapName string) {
 	socketVolume := core.Volume{
 		Name: socketVolumeName,
 		VolumeSource: core.VolumeSource{
@@ -229,7 +245,6 @@ func (r *CryptoBrokerReconciler) mountVolumes(deploy *apps.Deployment, configMap
 		},
 	}
 
-	// Create profiles volume
 	profileVolume := core.Volume{
 		Name: profileVolumeName,
 		VolumeSource: core.VolumeSource{
@@ -237,102 +252,131 @@ func (r *CryptoBrokerReconciler) mountVolumes(deploy *apps.Deployment, configMap
 				LocalObjectReference: core.LocalObjectReference{
 					Name: configMapName,
 				},
-				Items: []core.KeyToPath{
-					{
-						Key:  "Profiles.yaml",
-						Path: "Profiles.yaml",
-					},
-				},
 			},
 		},
 	}
 
-	// Declaring volumes in Pod.
 	volumes := &deploy.Spec.Template.Spec.Volumes
-	volumeMap := make(map[string]bool)
 
-	for _, v := range *volumes {
-		volumeMap[v.Name] = true
+	socketFound := false
+	profileFound := false
+
+	for i := range *volumes {
+		switch (*volumes)[i].Name {
+		case socketVolumeName:
+			(*volumes)[i] = socketVolume
+			socketFound = true
+
+		case profileVolumeName:
+			(*volumes)[i] = profileVolume
+			profileFound = true
+		}
 	}
 
-	if !volumeMap[socketVolumeName] {
+	if !socketFound {
 		*volumes = append(*volumes, socketVolume)
 	}
 
-	if !volumeMap[profileVolumeName] {
+	if !profileFound {
 		*volumes = append(*volumes, profileVolume)
 	}
 
-	// Making sure that every container in the Pod has socket volume.
 	for i := range deploy.Spec.Template.Spec.Containers {
-		mounts := &deploy.Spec.Template.Spec.Containers[i].VolumeMounts
+		container := &deploy.Spec.Template.Spec.Containers[i]
+
 		found := false
 
-		for _, m := range *mounts {
-			if m.Name == socketVolumeName {
+		for _, mount := range container.VolumeMounts {
+			if mount.Name == socketVolumeName {
 				found = true
 				break
 			}
 		}
 
-		if !found {
-			vol := core.VolumeMount{Name: socketVolumeName, MountPath: socketMountPath}
-			*mounts = append(*mounts, vol)
+		if found {
+			continue
 		}
+
+		container.VolumeMounts = append(
+			container.VolumeMounts,
+			core.VolumeMount{
+				Name:      socketVolumeName,
+				MountPath: socketMountPath,
+			},
+		)
 	}
 }
 
 func (r *CryptoBrokerReconciler) readProfileFile(profileName string) (string, error) {
-	filePath := filepath.Join(r.ProfilesDir, fmt.Sprintf("%s.yaml", profileName))
+	filePath := filepath.Join(
+		r.ProfilesDir,
+		fmt.Sprintf("%s.yaml", profileName),
+	)
+
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %v", ErrNoProfileFiles, err)
 	}
 
 	return string(content), nil
 }
 
-func (r *CryptoBrokerReconciler) reconcileConfigMap(ctx context.Context, broker *CryptoBroker, cmName string, content string) error {
-	var configMap core.ConfigMap
-	nn := types.NamespacedName{Name: cmName, Namespace: broker.Namespace}
+func (r *CryptoBrokerReconciler) patchStatus(ctx context.Context, broker *CryptoBroker, status string, message string, profileDetails *ProfileDetails) error {
+	base := broker.DeepCopy()
 
-	err := r.Get(ctx, nn, &configMap)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Construct new ConfigMap
-			newCM := &core.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      cmName,
-					Namespace: broker.Namespace,
-					Labels: map[string]string{
-						labelManagedBy: labelManagedByValue,
-					},
-				},
-				Data: map[string]string{
-					"Profiles.yaml": content,
-				},
-			}
+	broker.Status.State = status
+	broker.Status.SocketPath = fmt.Sprintf("%s/%s.sock", socketMountPath, socketVolumeName)
+	broker.Status.Message = message
 
-			if err := ctrl.SetControllerReference(broker, newCM, r.Scheme); err != nil {
-				return err
-			}
-
-			return r.Create(ctx, newCM)
-		}
-
-		return err
+	if profileDetails != nil {
+		broker.Status.ProfileDetails = profileDetails
 	}
 
-	// If it already exists, update data if the file content changed on disk
-	if configMap.Data["Profiles.yaml"] != content {
-		configMap.Data["Profiles.yaml"] = content
-		return r.Update(ctx, &configMap)
+	err := r.Status().Patch(ctx, broker, client.MergeFrom(base))
+
+	if err != nil {
+		logger.Error(err, "failed to patch status", "namespace", broker.Namespace, "name", broker.Name)
+	}
+
+	return err
+}
+
+func (r *CryptoBrokerReconciler) ensureProfileConfigMap(ctx context.Context, name string, namespace string, content string) error {
+	var configMap core.ConfigMap
+
+	err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &configMap)
+	if err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("%w: %v", ErrProfileConfigMap, err)
+		}
+
+		configMap = core.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+			Data: map[string]string{
+				"Profiles.yaml": content,
+			},
+		}
+
+		err := r.Create(ctx, &configMap)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrProfileConfigMap, err)
+		}
+
+		return nil
+	}
+
+	if configMap.Data["Profiles.yaml"] == content {
+		return nil
+	}
+
+	configMap.Data["Profiles.yaml"] = content
+	err = r.Update(ctx, &configMap)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrProfileConfigMap, err)
 	}
 
 	return nil
-}
-
-func (r *CryptoBrokerReconciler) updateStatus(ctx context.Context, broker *CryptoBroker, state string) error {
-	broker.Status.State = state
-	return r.Status().Update(ctx, broker)
 }
