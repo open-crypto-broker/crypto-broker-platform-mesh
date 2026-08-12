@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: cli-hash
-          image: ghcr.io/open-crypto-broker/test_app_go:v0.2.3
+          image: ghcr.io/open-crypto-broker/test_app_go:latest
           # Run non-root as uid 1000 so the CLI can connect to the crypto-broker
           # Unix socket owned by the server sidecar (also uid 1000). Enforced
           # here because the pinned image may still default to root.
@@ -49,7 +49,7 @@ spec:
             - ./go-client-cli
             - --loop
             - "500"
-            - hash
+            - hash-data
             - --profile=$(CRYPTO_BROKER_PROFILE)
             - "Welcome CryptoBroker from Platform Mesh"
           resources:
@@ -60,12 +60,12 @@ spec:
               cpu: 200m
               memory: 128Mi
         # - name: cli-sign
-        #   image: ghcr.io/open-crypto-broker/test_app_go:v0.2.3
+        #   image: ghcr.io/open-crypto-broker/test_app_go:latest
         #   command:
         #     - ./go-client-cli
         #     - --loop
         #     - "700"
-        #     - sign
+        #     - sign-certificate
         #     - --profile=Default
         #     - "Platform Mesh signing test"
           # resources:

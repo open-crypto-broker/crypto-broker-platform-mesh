@@ -12,7 +12,7 @@ func (in *CryptoBroker) DeepCopyInto(out *CryptoBroker) {
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec = in.Spec
-	out.Status = in.Status
+	in.Status.DeepCopyInto(&out.Status)
 }
 
 // DeepCopy copies the receiver, creating a new CryptoBroker.
@@ -31,6 +31,41 @@ func (in *CryptoBroker) DeepCopyObject() runtime.Object {
 		return c
 	}
 	return nil
+}
+
+// DeepCopyInto copies the receiver, writing into out. in must be non-nil.
+func (in *CryptoBrokerStatus) DeepCopyInto(out *CryptoBrokerStatus) {
+	*out = *in
+	if in.ProfileDetails != nil {
+		in, out := &in.ProfileDetails, &out.ProfileDetails
+		*out = new(ProfileDetails)
+		**out = **in
+	}
+}
+
+// DeepCopy copies the receiver, creating a new CryptoBrokerStatus.
+func (in *CryptoBrokerStatus) DeepCopy() *CryptoBrokerStatus {
+	if in == nil {
+		return nil
+	}
+	out := new(CryptoBrokerStatus)
+	in.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto copies the receiver, writing into out. in must be non-nil.
+func (in *ProfileDetails) DeepCopyInto(out *ProfileDetails) {
+	*out = *in
+}
+
+// DeepCopy copies the receiver, creating a new ProfileDetails.
+func (in *ProfileDetails) DeepCopy() *ProfileDetails {
+	if in == nil {
+		return nil
+	}
+	out := new(ProfileDetails)
+	in.DeepCopyInto(out)
+	return out
 }
 
 // DeepCopyInto copies the receiver, writing into out. in must be non-nil.

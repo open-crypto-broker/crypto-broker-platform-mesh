@@ -449,16 +449,11 @@ tasks:
       - KCP_KUBECONFIG={{.KCP_KUBECONFIG}} WS_SERVER='{{.WS_SERVER}}' PROVIDER_PATH='{{.PROVIDER_PATH}}' bash scripts/bind-crypto-broker-api.sh
 
   consumer-app:create-broker:
-    desc: "Internal: create the CryptoBroker in the workspace (retries until the APIBinding is ready)."
+    desc: "Internal: create the CryptoBroker in the workspace (retries until the APIBinding is ready). All messaging is handled by scripts/create-crypto-broker.sh."
     internal: true
     silent: true
     cmds:
-      - echo "[*] Creating CryptoBroker '{{.NAME}}' in workspace namespace 'default'..."
-      - KCP_KUBECONFIG={{.KCP_KUBECONFIG}} WS_SERVER='{{.WS_SERVER}}' NAME='{{.NAME}}' PROFILE='{{.PROFILE}}' TARGET_DEPLOY='{{.TARGET_DEPLOY}}' ENVIRONMENT='{{.ENVIRONMENT}}' bash scripts/create-crypto-broker.sh
-      - 'echo "[+] CryptoBroker ''{{.NAME}}'' created in workspace ''{{.WORKSPACE}}''."'
-      - 'echo "[i] It is synced into service-cluster namespace ''{{.CLUSTER}}'' and is"'
-      - 'echo "[i] visible in the Platform Mesh WebUI under this account."'
-      - 'echo "[i] The target Deployment ''{{.TARGET_DEPLOY}}'' runs in namespace ''{{.CLUSTER}}''."'
+      - KCP_KUBECONFIG={{.KCP_KUBECONFIG}} WS_SERVER='{{.WS_SERVER}}' NAME='{{.NAME}}' PROFILE='{{.PROFILE}}' TARGET_DEPLOY='{{.TARGET_DEPLOY}}' ENVIRONMENT='{{.ENVIRONMENT}}' WORKSPACE='{{.WORKSPACE}}' CLUSTER='{{.CLUSTER}}' bash scripts/create-crypto-broker.sh
 
   consumer-app:status:
     desc: "Diagnose a consumer app + its CryptoBroker in a user WORKSPACE: shows the CryptoBroker on both the kcp (portal) and service-cluster side, the target Deployment, pods, whether the crypto-broker sidecar was injected, recent events and app logs. Vars: WORKSPACE (required), NAME, NAMESPACE (default default), TARGET_DEPLOY (default crypto-broker-consumer-app), LOG_LINES (default 10)."
@@ -470,7 +465,7 @@ tasks:
       NAME: '{{.NAME | default ""}}'
       NAMESPACE: '{{.NAMESPACE | default "default"}}'
       TARGET_DEPLOY: '{{.TARGET_DEPLOY | default "crypto-broker-consumer-app"}}'
-      LOG_LINES: '{{.LOG_LINES | default "10"}}'
+      LOG_LINES: '{{.LOG_LINES | default "30"}}'
     deps:
       # Centralized guard: KCP_KUBECONFIG present + WORKSPACE resolves to a namespace.
       - task: _require-workspace
