@@ -1,0 +1,16 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crypto-broker-operator
+  labels:
+    {{- include "crypto-broker-operator.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "crypto-broker-operator.serviceAccountName" . }}
+    namespace: {{ .Values.namespace.name }}
+roleRef:
+  kind: ClusterRole
+  name: crypto-broker-operator
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

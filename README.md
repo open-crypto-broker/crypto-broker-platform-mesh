@@ -73,10 +73,9 @@ multi-tenant namespace model, and multi-consumer simulation.
 | Path | Contents |
 | --- | --- |
 | `operator/` | The `crypto-broker-operator` Go module (watches `CryptoBroker` CRs, injects the server sidecar). |
-| `crds/` | The `CryptoBroker` CustomResourceDefinition. |
+| `charts/crypto-broker-operator/` | Helm chart that deploys the operator (Deployment + RBAC), bundles the `CryptoBroker` CRD (`crds/`), and builds the profile-catalog ConfigMap from `files/profiles/`. Published to GHCR as an OCI chart. |
 | `kcp/` | kcp control-plane manifests: APIExport, provider metadata, and portal ContentConfiguration. |
-| `service-cluster/` | Operator deployment + RBAC, api-syncagent values/RBAC, and the PublishedResource. |
-| `profiles/` | Crypto profile catalog (Default, FIPS-140-3-*, KSA-*) loaded into the operator's ConfigMap. |
+| `service-cluster/` | api-syncagent values/RBAC and the PublishedResource. |
 | `consumer-app/` | Consumer workload Deployment and a `CryptoBroker` instance targeting it. |
 | `scripts/` | Multi-consumer simulation helpers. |
 | `docs/` | The detailed deployment guide. |

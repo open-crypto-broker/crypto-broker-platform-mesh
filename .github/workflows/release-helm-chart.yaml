@@ -1,0 +1,45 @@
+name: Release Helm Chart
+
+# Packages charts/crypto-broker-operator and pushes it to the GHCR OCI registry
+# so Platform Mesh cluster deployments can install it via
+# `helm install oci://ghcr.io/open-crypto-broker/charts/crypto-broker-operator`.
+
+on:
+  push:
+    tags:
+      - "operator-chart-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Package and push operator chart to GHCR (OCI)
+    permissions:
+      contents: read # required for checkout
+      packages: write # for pushing the chart to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package and push chart
+        env:
+          CHART_DIR: charts/crypto-broker-operator
+          OCI_REPO: oci://ghcr.io/open-crypto-broker/charts
+        run: |
+          helm version
+          helm lint "$CHART_DIR"
+          PKG=$(helm package "$CHART_DIR" -d "$RUNNER_TEMP" | awk '{print $NF}')
+          echo "Pushing $PKG to $OCI_REPO"
+          helm push "$PKG" "$OCI_REPO"

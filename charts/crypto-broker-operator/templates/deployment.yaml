@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crypto-broker-operator
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "crypto-broker-operator.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.operator.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "crypto-broker-operator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "crypto-broker-operator.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "crypto-broker-operator.serviceAccountName" . }}
+      containers:
+        - name: operator
+          image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag }}"
+          imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+          env:
+            - name: PROFILES_CATALOG_DIR
+              value: {{ .Values.profiles.mountPath | quote }}
+            - name: CRYPTO_BROKER_SERVER_IMAGE
+              value: {{ .Values.serverImage | quote }}
+          volumeMounts:
+            - name: profiles
+              mountPath: {{ .Values.profiles.mountPath }}
+              readOnly: true
+          securityContext:
+            {{- toYaml .Values.operator.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.operator.resources | nindent 12 }}
+      volumes:
+        - name: profiles
+          configMap:
+            name: {{ .Values.profiles.configMapName }}

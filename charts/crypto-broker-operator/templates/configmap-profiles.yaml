@@ -1,0 +1,11 @@
+{{- if .Values.profiles.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.profiles.configMapName }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "crypto-broker-operator.labels" . | nindent 4 }}
+data:
+{{ (.Files.Glob "files/profiles/*.yaml").AsConfig | indent 2 }}
+{{- end }}

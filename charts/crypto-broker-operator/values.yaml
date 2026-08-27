@@ -1,0 +1,44 @@
+# Default values for the crypto-broker-operator chart.
+
+# Namespace the operator and its RBAC/ConfigMaps are created in.
+namespace:
+  name: crypto-broker-provider
+  # Let the chart create the namespace. Disable if it is managed elsewhere
+  # (e.g. by the api-syncagent install with --create-namespace).
+  create: true
+
+operator:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/open-crypto-broker/operator
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources: {}
+  # Security context matches the distroless/static:nonroot base image (uid 65532).
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+# Container image the operator injects as the server sidecar (CRYPTO_BROKER_SERVER_IMAGE).
+# Per-CryptoBroker spec.version overrides the tag at runtime.
+serverImage: ghcr.io/open-crypto-broker/server:latest
+
+profiles:
+  # Create the profile catalog ConfigMap from files/profiles/*.yaml.
+  create: true
+  # ConfigMap name the operator mounts; keep in sync with the deployment.
+  configMapName: crypto-broker-profile-catalog
+  # Directory the operator reads the catalog from (PROFILES_CATALOG_DIR).
+  mountPath: /profiles
+
+serviceAccount:
+  create: true
+  name: crypto-broker-operator
+
+rbac:
+  create: true
