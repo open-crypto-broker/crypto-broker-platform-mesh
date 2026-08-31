@@ -1,0 +1,16 @@
+apiVersion: v2
+name: crypto-broker-operator
+description: Deploys the crypto-broker operator, which watches CryptoBroker resources and injects the crypto-broker-server sidecar into target Deployments.
+type: application
+version: 0.1.0
+appVersion: "dev"
+keywords:
+  - crypto-broker
+  - operator
+  - platform-mesh
+home: https://github.com/open-crypto-broker
+sources:
+  - https://github.com/open-crypto-broker/crypto-broker-platform-mesh
+maintainers:
+  - name: Crypto Broker Team
+    url: https://github.com/open-crypto-broker

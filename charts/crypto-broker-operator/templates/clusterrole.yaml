@@ -1,0 +1,21 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crypto-broker-operator
+  labels:
+    {{- include "crypto-broker-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["open-crypto-broker.io"]
+    resources: ["cryptobrokers"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["open-crypto-broker.io"]
+    resources: ["cryptobrokers/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+{{- end }}

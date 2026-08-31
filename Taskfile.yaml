@@ -26,6 +26,10 @@ vars:
   # single value, so a host/port change in the local-setup only needs updating
   # here. Override via the KCP_SERVER env var / .env file.
   KCP_SERVER: '{{.KCP_SERVER | default "https://kcp.api.portal.localhost:8443"}}'
+  # Operator Helm chart location and OCI publish target.
+  OPERATOR_CHART_DIR: 'charts/crypto-broker-operator'
+  OPERATOR_NAMESPACE: 'crypto-broker-provider'
+  CHART_OCI_REPO: '{{.CHART_OCI_REPO | default "oci://ghcr.io/open-crypto-broker/charts"}}'
 
 tasks:
   default:
@@ -99,22 +103,13 @@ tasks:
       - KUBECONFIG={{.KCP_KUBECONFIG}} kubectl apply -f kcp/content-configuration.yaml
 
   pm:deploy-operator:
-    desc: "Deploy crypto-broker-operator + CRD on the service cluster"
-    internal: true
-    cmds:
-      - kubectl apply -f crds/cryptobroker-crd.yaml
-      - kubectl apply -f service-cluster/operator-deployment.yaml
-      - task: profiles:apply
-
-  profiles:apply:
-    desc: "Create or update the profile catalog ConfigMap from local profile files"
+    desc: "Deploy crypto-broker-operator + CRD on the service cluster via Helm"
     internal: true
     cmds:
       - |
-        kubectl create configmap crypto-broker-profile-catalog \
-          --from-file=profiles/ \
-          -n crypto-broker-provider \
-          --dry-run=client -o yaml | kubectl apply -f -
+        helm upgrade --install crypto-broker-operator {{.OPERATOR_CHART_DIR}} \
+          --namespace {{.OPERATOR_NAMESPACE}} --create-namespace \
+          --set namespace.create=false
 
   pm:deploy-syncagent:
     desc: "Deploy api-syncagent on the service cluster"
@@ -160,12 +155,12 @@ tasks:
     silent: true
     cmds:
       - helm uninstall api-syncagent -n crypto-broker-provider 2>/dev/null || true
-      - kubectl delete -f service-cluster/operator-deployment.yaml 2>/dev/null || true
+      - helm uninstall crypto-broker-operator -n crypto-broker-provider 2>/dev/null || true
       - kubectl delete -f service-cluster/published-resource.yaml 2>/dev/null || true
       - kubectl delete -f service-cluster/syncagent-rbac.yaml 2>/dev/null || true
-      - kubectl delete configmap crypto-broker-profile-catalog -n crypto-broker-provider 2>/dev/null || true
       - kubectl delete secret crypto-broker-kubeconfig -n crypto-broker-provider 2>/dev/null || true
-      - kubectl delete -f crds/cryptobroker-crd.yaml 2>/dev/null || true
+      # Helm does not delete CRDs installed from the chart's crds/ dir.
+      - kubectl delete -f {{.OPERATOR_CHART_DIR}}/crds/cryptobroker-crd.yaml 2>/dev/null || true
       - kubectl delete namespace crypto-broker-provider 2>/dev/null || true
 
   ################## Consumer Workspace Tasks ####################
@@ -232,7 +227,7 @@ tasks:
     silent: true
     cmds:
       - echo "[*] Building operator image..."
-      - docker build --build-context profiles=../profiles -t ghcr.io/open-crypto-broker/operator:latest -f docker/Dockerfile .
+      - docker build --build-context profiles=../charts/crypto-broker-operator/files/profiles -t ghcr.io/open-crypto-broker/operator:latest -f docker/Dockerfile .
       - echo "[+] Operator image built successfully"
 
   operator:load:
@@ -283,6 +278,25 @@ tasks:
         fi
       - echo "[+] Operator image built and loaded."
 
+  operator:chart-lint:
+    desc: "Lint the crypto-broker-operator Helm chart and render it locally"
+    silent: true
+    cmds:
+      - helm lint {{.OPERATOR_CHART_DIR}}
+      - helm template crypto-broker-operator {{.OPERATOR_CHART_DIR}} --include-crds >/dev/null
+      - echo "[+] Chart lints and renders cleanly."
+
+  operator:chart-publish:
+    desc: "Package and push the operator chart to the OCI registry. Requires 'helm registry login ghcr.io' first. Vars: CHART_OCI_REPO (default oci://ghcr.io/open-crypto-broker/charts)."
+    silent: true
+    cmds:
+      - task: operator:chart-lint
+      - |
+        PKG=$(helm package {{.OPERATOR_CHART_DIR}} -d "$(mktemp -d)" | awk '{print $NF}')
+        echo "[*] Pushing $PKG to {{.CHART_OCI_REPO}}"
+        helm push "$PKG" {{.CHART_OCI_REPO}}
+      - echo "[+] Chart published."
+
   ################# Complete Deployment Workflows ####################
 
   redeploy-local:
@@ -290,8 +304,10 @@ tasks:
     silent: true
     cmds:
       - echo "[*] Re-deploying local changes (operator + profiles + content config)..."
-      - task: operator:deploy
-      - task: profiles:apply
+      - task: operator:build
+      - task: operator:load
+      - task: pm:deploy-operator
+      - task: operator:restart
       - task: config:apply-kcp
       - task: pm:status
       - echo "[+] Redeploy complete!"
