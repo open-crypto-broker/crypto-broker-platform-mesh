@@ -1,0 +1,43 @@
+name: Nightly Security Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+
+  workflow_dispatch:
+    inputs:
+      scan_image:
+        description: "Run image scan"
+        type: boolean
+        default: true
+
+      image_name:
+        description: "Image name"
+        type: string
+        default: "ghcr.io/open-crypto-broker/operator"
+
+      scan_directory:
+        description: "Run SBOM scan on directory"
+        type: boolean
+        default: true
+
+      directory_to_scan:
+        description: "Directory to scan"
+        type: string
+        default: "operator"
+
+permissions: {}
+
+jobs:
+  scan:
+    name: Nightly Security Scan
+    permissions:
+      contents: read # for checking out code
+      packages: read # required for pulling images from GHCR
+      security-events: write # for uploading SARIF security scan results
+    uses: open-crypto-broker/.github/.github/workflows/security-scan.yaml@main # nolint # zizmor: ignore[unpinned-uses]
+    with:
+      scan_image: ${{ inputs.scan_image || true }}
+      image_name: ${{ inputs.image_name || 'ghcr.io/open-crypto-broker/operator' }}
+      scan_directory: ${{ inputs.scan_directory || true }}
+      directory_to_scan: ${{ inputs.directory_to_scan || 'operator' }}
