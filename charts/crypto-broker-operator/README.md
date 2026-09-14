@@ -49,3 +49,23 @@ To update the `CryptoBroker` CRD after a schema change, apply it manually:
 ```shell
 kubectl apply -f charts/crypto-broker-operator/crds/cryptobroker-crd.yaml
 ```
+
+## Releasing
+
+The chart and the operator image are published to GHCR by two separate, tag-triggered workflows.
+They are independent: bump and tag whichever one changed (a chart-only change does not require a new image, and vice versa).
+
+| Artifact | Workflow | Tag pattern | Published to |
+| --- | --- | --- | --- |
+| Operator image | [`release-operator-image.yaml`](../../.github/workflows/release-operator-image.yaml) | `operator-v*` (e.g. `operator-v0.1.0`) | `ghcr.io/open-crypto-broker/operator` (`:latest`, `:<version>`, `:sha-<commit>`) |
+| Helm chart | [`release-helm-chart.yaml`](../../.github/workflows/release-helm-chart.yaml) | `operator-chart-v*` (e.g. `operator-chart-v0.1.0`) | `oci://ghcr.io/open-crypto-broker/charts/crypto-broker-operator` |
+
+```shell
+# Release the operator image
+git tag operator-v0.1.0 && git push origin operator-v0.1.0
+
+# Release the chart
+git tag operator-chart-v0.1.0 && git push origin operator-chart-v0.1.0
+```
+
+The image build reuses the same named `profiles` build context as `task operator:build`, so the published image bundles the profile catalog from `files/profiles/`.

@@ -1,0 +1,83 @@
+name: Release Operator Image
+
+# Builds charts/crypto-broker-operator's operator binary into a container image
+# and pushes it to GHCR, so the Helm chart's default
+# `operator.image.repository: ghcr.io/open-crypto-broker/operator` resolves to a
+# real, pullable image on remote clusters (locally it is built via
+# `task operator:build-local`).
+#
+# The Dockerfile pulls the crypto profiles in via a named build context, mirroring
+# `task operator:build` (docker build --build-context profiles=...).
+
+on:
+  push:
+    tags:
+      - "operator-v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-operator-image-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Build and push operator image to GHCR
+    permissions:
+      contents: read # required for checkout
+      packages: write # for pushing the image to GHCR
+      id-token: write # for OIDC-based attestation signing
+      attestations: write # for creating the build provenance attestation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ghcr.io/open-crypto-broker/operator
+          # operator-v0.1.0 -> 0.1.0; always publish :latest (chart default tag).
+          tags: |
+            type=match,pattern=operator-v(.*),group=1
+            type=sha
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+      - name: Build and push operator image
+        id: push
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: operator
+          file: operator/docker/Dockerfile
+          build-contexts: |
+            profiles=charts/crypto-broker-operator/files/profiles
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate artifact attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/open-crypto-broker/operator
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
