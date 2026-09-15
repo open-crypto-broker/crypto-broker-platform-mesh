@@ -29,6 +29,7 @@ jobs:
       packages: write # for pushing the image to GHCR
       id-token: write # for OIDC-based attestation signing
       attestations: write # for creating the build provenance attestation
+      artifact-metadata: write # for storing the build provenance record
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
