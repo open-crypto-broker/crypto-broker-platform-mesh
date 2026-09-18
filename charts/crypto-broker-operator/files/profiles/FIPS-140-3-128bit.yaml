@@ -5,31 +5,33 @@
 # ECDSA: 256-bit - 383-bit
 # Reference: NIST SP 800-57, Table 2 on Page 54-55, Table 3 on Page 56
 ---
-- Name: FIPS-140-3-128bit
-  Settings:
-    CryptoLibrary: native
-  API:
-    HashData:
-      HashAlg: sha-256
-    SignCertificate:
-      SignAlg: rsa
-      HashAlg: sha-256
-      Validity:
-        ValidNotBeforeOffset: -1h
-        ValidNotAfterOffset: 8760h
-      KeyConstraints:
-        Subject:
-          RSA:
-            MinKeySize: 3072
-            MaxKeySize: 8192
-          ECDSA:
-            MinKeySize: 256
-            MaxKeySize: 384
-        Issuer:
-          RSA:
-            MinKeySize: 3072
-            MaxKeySize: 8192
-      KeyUsage: [digitalSignature, keyEncipherment]
-      ExtendedKeyUsage: [clientAuth]
-      BasicConstraints:
-        CA: false
+Settings:
+  CryptoLibrary: native
+
+Profiles:
+  - Name: FIPS-140-3-128bit
+    API:
+      HashData:
+        HashAlg: sha-256
+      SignCertificate:
+        SignAlg: rsa
+        HashAlg: sha-256
+        Validity:
+          ValidNotBeforeOffset: -1h
+          ValidNotAfterOffset: 8760h
+        KeyConstraints:
+          Subject:
+            RSA:
+              MinKeySize: 3072
+              MaxKeySize: 8192
+            ECDSA:
+              MinKeySize: 256
+              MaxKeySize: 384
+          Issuer:
+            RSA:
+              MinKeySize: 3072
+              MaxKeySize: 8192
+        KeyUsage: [digitalSignature, keyEncipherment]
+        ExtendedKeyUsage: [clientAuth]
+        BasicConstraints:
+          CA: false
