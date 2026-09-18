@@ -6,28 +6,30 @@
 # Validity: Five years
 # Reference: NCS 1:2020 Page 12 and 16
 ---
-- Name: KSA-ADVANCED-2020
-  Settings:
-    CryptoLibrary: native
-  API:
-    HashData:
-      HashAlg: sha3-512
-    SignCertificate:
-      SignAlg: ecdsa
-      HashAlg: sha-512
-      Validity:
-        ValidNotBeforeOffset: -1h
-        ValidNotAfterOffset: 43800h
-      KeyConstraints:
-        Subject:
-          ECDSA:
-            MinKeySize: 521
-            MaxKeySize: 521
-        Issuer:
-          ECDSA:
-            MinKeySize: 521
-            MaxKeySize: 521
-      KeyUsage: [digitalSignature, keyEncipherment]
-      ExtendedKeyUsage: [clientAuth]
-      BasicConstraints:
-        CA: false
+Settings:
+  CryptoLibrary: native
+
+Profiles:
+  - Name: KSA-ADVANCED-2020
+    API:
+      HashData:
+        HashAlg: sha3-512
+      SignCertificate:
+        SignAlg: ecdsa
+        HashAlg: sha-512
+        Validity:
+          ValidNotBeforeOffset: -1h
+          ValidNotAfterOffset: 43800h
+        KeyConstraints:
+          Subject:
+            ECDSA:
+              MinKeySize: 521
+              MaxKeySize: 521
+          Issuer:
+            ECDSA:
+              MinKeySize: 521
+              MaxKeySize: 521
+        KeyUsage: [digitalSignature, keyEncipherment]
+        ExtendedKeyUsage: [clientAuth]
+        BasicConstraints:
+          CA: false
