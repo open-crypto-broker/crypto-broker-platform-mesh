@@ -41,7 +41,7 @@ The following diagram illustrates the multi-cluster(workspace) setup for the Cry
 │ │Workspace(account)│  │Workspace(account)│  │Workspace(account)│  │Workspace(account)│ │
 │ │                  │  │                  │  │                  │  │                  │ │
 │ │┌────────────────┐│  │┌────────────────┐│  │┌────────────────┐│  │┌────────────────┐│ │
-│ ││APIBinding      ◄┼─┬┼►APIBinding      ││ ┌►│APIBinding      ││ ┌►│APIBinding      ││ │
+│ ││APIBinding      ┼┼─┬┼┼APIBinding      ││ ┌┼┤APIBinding      ││ ┌┼┼APIBinding      ││ │
 │ │└────────────────┘│ ││└────────────────┘│ ││└────────────────┘│ ││└────────────────┘│ │
 │ │                  │ ││                  │ ││                  │ ││                  │ │
 │ │                  │ ││                  │ ││┌────────────────┐│ ││                  │ │
@@ -53,7 +53,7 @@ The following diagram illustrates the multi-cluster(workspace) setup for the Cry
 │ ┌───────────────────┐│                     │  │                  │                     │   ┌────────────────────┐
 │ │Workspace(provider)││                     │  └──────────────────┼─────────────────────┼───┼SimpleCluster       │
 │ │┌─────────────────┐││                     │                     │                     │   │                    │
-│ ││APIExport        ┼┼┴─────────────────────┴─────────────────────┘                     │   │ ┌────────────────┐ │
+│ ││APIExport       ◄┼┼┴─────────────────────┴─────────────────────┘                     │   │ ┌────────────────┐ │
 │ │└─────────────────┘│                                                                  │   │ │Pod             │ │
 │ │┌─────────────────┐│    ┌───────────────────────────────────────────────────────┐     │   │ ┼────────────────┼ │
 │ ││kubeconfig       ││    │                 Crypto Broker Cluster                 │     │   │ │┌──────────────┐│ │
@@ -64,4 +64,34 @@ The following diagram illustrates the multi-cluster(workspace) setup for the Cry
 │ │                   │    │                                                       │     │   │ │└──────────────┘│ │
 │ └───────────────────┘    └───────────────────────────────────────────────────────┘     │   │ └────────────────┘ │
 └────────────────────────────────────────────────────────────────────────────────────────┘   └────────────────────┘
+```
+
+## Sequence Diagram
+
+The sequence diagram illustrates the interaction between the consumer workspace, provider workspace, and the crypto broker operator during the setup phase, an injection request, and profile update processes.
+
+```mermaid
+sequenceDiagram
+    box Platform Mesh Instance
+    participant A as Consumer Workspace (account)
+    end
+
+    box Crypto Broker Cluster
+    participant B as Provider Workspace
+    participant C as Crypto Broker Operator (Multicluster-Provider/Runtime)
+    end
+
+    critical Setup
+    A->>B: Binds via APIBinding to APIExport
+    C->>B: Watches attached workspaces
+    end
+
+    alt InjectionRequest
+    A->>C: Injection Request
+    C->>A: Injects Sidecar with Profile into Cluster (Pod)
+    else Profile Update
+    B->>B: Updates Profile
+    B->>C: Notifies Profile Update
+    C->>A: Propagates Profile Update
+    end
 ```
