@@ -28,7 +28,8 @@ To enable this interaction, the Crypto Broker Operator will also need to integra
 The admission webhooks will therefore allow the operator to check, when a new injection request is made, whether the selected profile is available and can then inject this profile along the Crypto Broker Server into the consumer cluster (pod) accordingly.
 The Crypto Broker Operator keeps track of the profiles and if any changes are made from the provider workspace, it will propagate these changes to the consumer clusters to ensure consistency and proper injection of the updated profiles.
 
-In summary, the multi-cluster(workspace) setup for the Crypto Broker platform involves transforming the current workspace into a [provider workspace](https://github.com/kcp-dev/multicluster-provider), centralizing the management of the Crypto Broker Server and profiles, and enabling seamless interaction with consumer workspaces through the multi-cluster runtime and admission webhooks. This approach ensures consistency, reduces duplication, and improves the overall manageability of the Crypto Broker platform across multiple clusters(workspaces).
+In summary, the multi-cluster(workspace) setup for the Crypto Broker platform involves transforming the current workspace into a [provider workspace](https://github.com/kcp-dev/multicluster-provider), centralizing the management of the Crypto Broker Server and profiles, and enabling seamless interaction with consumer workspaces through the multi-cluster runtime and admission webhooks.
+This approach ensures consistency, reduces duplication, and improves the overall manageability of the Crypto Broker platform across multiple clusters(workspaces).
 
 ## Architecture Diagram
 
