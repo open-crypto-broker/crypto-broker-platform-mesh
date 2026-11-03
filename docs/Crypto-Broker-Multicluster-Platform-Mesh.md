@@ -100,14 +100,14 @@ sequenceDiagram
     end
 
     alt InjectionRequest
-        rect rgb(25, 45, 65)
+        rect rgba(58, 65, 25, 0.6)
             A->>+C: Injection Request
             C->>+D: Injects Sidecar with Profile
             deactivate C
             deactivate D
         end
     else Profile Update
-        rect rgb(55, 40, 25)
+        rect rgba(55, 40, 25, 0.6)
             B->>+B: Updates Profile
             B-->>+C: Watches Profile changes
             C-->>+D: Propagates Profile update
