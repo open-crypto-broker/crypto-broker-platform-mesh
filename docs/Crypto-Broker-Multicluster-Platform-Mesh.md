@@ -78,30 +78,42 @@ The sequence diagram illustrates the interaction between the consumer workspace,
 
 ```mermaid
 sequenceDiagram
-    box Platform Mesh Instance
+    autonumber
+
+    box rgb(33, 43, 54) Platform Mesh Instance
     participant A as Consumer Workspace
     participant B as Provider Workspace
     end
 
-    box Consumer Cluster
-    participant D as Deplyoment (Simple Cluster)
+    box rgb(43, 33, 54) Consumer Cluster
+    participant D as Deployment (Simple Cluster)
     end
 
-    box Crypto Broker Cluster
-    participant C as Crypto Broker Operator (Multicluster-Provider/Runtime)
+    box rgb(33, 54, 43) Crypto Broker Cluster
+    participant C as Crypto Broker Operator (Multicluster)
     end
 
     critical Setup
-    A->>B: Binds via APIBinding to APIExport
-    C->>B: Watches attached workspaces
+        A->>+B: Binds via APIBinding to APIExport
+        C->>B: Watches attached workspaces
+        deactivate B
     end
 
     alt InjectionRequest
-    A->>C: Injection Request
-    C->>D: Injects Sidecar with Profile
+        rect rgb(25, 45, 65)
+            A->>+C: Injection Request
+            C->>+D: Injects Sidecar with Profile
+            deactivate C
+            deactivate D
+        end
     else Profile Update
-    B-->>+B: Updates Profile
-    B-->>C: Watches Profile changes
-    C-->>D: Propagates Profile update
+        rect rgb(55, 40, 25)
+            B->>+B: Updates Profile
+            B-->>+C: Watches Profile changes
+            C-->>+D: Propagates Profile update
+            deactivate B
+            deactivate C
+            deactivate D
+        end
     end
 ```
