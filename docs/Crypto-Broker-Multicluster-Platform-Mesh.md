@@ -21,7 +21,7 @@ Three main steps need to be taken to enable multi-workspace support for the Cryp
 - The Crypto Broker Operator needs to implement admission webhooks for profile management (see [admission webhooks](https://github.com/platform-mesh/platform-mesh/blob/main/apis/core/v1alpha1/account_webhook.go)).
 
 In order to achieve this, the current workspace needs to be transformed into a [provider workspace](https://github.com/kcp-dev/multicluster-provider) that exposes the APIExport and consumer workspaces can bind via the APIBinding to it.
-When a consumer workspace requests the injection of the Crypto Broker Server and Server profiles, the Crypto Broker Operator needs access to the kubeconfig of the consumer cluster (which might be living in this consumer workspace) to be able to interact with the consumer cluster and perform the necessary injection operations.
+When a consumer workspace requests the injection of the Crypto Broker Server and Server profiles, the Crypto Broker Operator needs access to the kubeconfig of the consumer cluster (which lives in this consumer workspace) to be able to interact with the consumer cluster and perform the necessary injection operations.
 The necessary rights and permissions must be granted in the kubeconfig for the Crypto Broker Operator to be able to perform the required operations in the consumer cluster.
 
 The Crypto Broker provider workspace holds the APIExport and the Server profiles for the Crypto Broker Server, but no actual workload (i.e., no running instances of the Crypto Broker Server).
